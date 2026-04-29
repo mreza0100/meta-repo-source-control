@@ -112,9 +112,10 @@ suite("parseStatusLine", () => {
     });
   });
 
-  test("renamed file: takes destination path, not 'old -> new' string", () => {
+  test("renamed file: file=destination, sourcePath=old (HEAD-side path)", () => {
     assert.deepStrictEqual(parseStatusLine("R  packages/extension/esbuild.mjs -> esbuild.mjs"), {
       status: "R ",
+      sourcePath: "packages/extension/esbuild.mjs",
       file: "esbuild.mjs",
     });
   });
@@ -122,14 +123,22 @@ suite("parseStatusLine", () => {
   test("renamed file with deeper paths on both sides", () => {
     assert.deepStrictEqual(parseStatusLine("R  src/old/dir/file.ts -> src/new/dir/file.ts"), {
       status: "R ",
+      sourcePath: "src/old/dir/file.ts",
       file: "src/new/dir/file.ts",
     });
   });
 
-  test("copied file (C flag) also splits on -> and takes destination", () => {
+  test("copied file (C flag) also captures sourcePath", () => {
     assert.deepStrictEqual(parseStatusLine("C  src/original.ts -> src/copy.ts"), {
       status: "C ",
+      sourcePath: "src/original.ts",
       file: "src/copy.ts",
     });
+  });
+
+  test("non-rename rows have no sourcePath", () => {
+    const result = parseStatusLine("M  src/foo.ts");
+    assert.strictEqual(result.sourcePath, undefined);
+    assert.strictEqual(result.file, "src/foo.ts");
   });
 });

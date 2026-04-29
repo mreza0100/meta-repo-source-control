@@ -37,19 +37,28 @@ function execGit(repoPath: string, args: string[]): Promise<string> {
 
 interface FileStatus {
   status: string;
+  // Working-tree path (destination of a rename/copy, otherwise just the path).
   file: string;
+  // HEAD-side path for renamed/copied rows. Undefined for non-rename rows.
+  // Needed because `git show HEAD:<file>` fails when `file` is the new
+  // path of a rename — HEAD doesn't have it; HEAD has the old path.
+  sourcePath?: string;
 }
 
-// Parse one line of `git status --porcelain` into status + file. Renames
-// (and copies) come through as "old -> new"; we keep only the new (current)
-// path so file operations target a real on-disk path instead of the
-// mangled "old -> new" string.
+// Parse one line of `git status --porcelain` into status + file (+ sourcePath
+// for renames/copies). Porcelain v1 reports renames as "R  old -> new".
 function parseStatusLine(line: string): FileStatus {
   const status = line.slice(0, 2);
   const filePart = line.slice(3);
   const arrowIdx = filePart.indexOf(" -> ");
-  const file = arrowIdx >= 0 ? filePart.slice(arrowIdx + 4) : filePart;
-  return { status, file };
+  if (arrowIdx >= 0) {
+    return {
+      status,
+      sourcePath: filePart.slice(0, arrowIdx),
+      file: filePart.slice(arrowIdx + 4),
+    };
+  }
+  return { status, file: filePart };
 }
 
 async function getStatus(repoPath: string): Promise<FileStatus[]> {
@@ -73,7 +82,12 @@ async function getBranch(repoPath: string): Promise<string> {
 // Diff opening — invoked when the user clicks a file row in the tree.
 // ─────────────────────────────────────────────────────────────────────
 
-async function openDiffForFile(repoPath: string, file: string, status: string): Promise<void> {
+async function openDiffForFile(
+  repoPath: string,
+  file: string,
+  status: string,
+  sourcePath?: string,
+): Promise<void> {
   const showOptions = { preserveFocus: false, preview: true };
   const target = path.join(repoPath, file);
 
@@ -87,6 +101,12 @@ async function openDiffForFile(repoPath: string, file: string, status: string): 
     return;
   }
 
+  // For renamed/copied rows, HEAD knows the file under the OLD path
+  // (sourcePath) — looking up `git show HEAD:<file>` for the new path
+  // returns nothing. Use sourcePath for the HEAD blob; this gives a
+  // semantically correct diff (clean rename → no content diff).
+  const headPath = sourcePath ?? file;
+
   // Materialise HEAD blob inside the repo's .git/metarepo-sc-tmp/ so VSCode's
   // default `**/.git` exclusion keeps it out of Explorer/search/TS service.
   const tmpPath = path.join(repoPath, ".git", TMP_DIR_NAME, file);
@@ -95,7 +115,7 @@ async function openDiffForFile(repoPath: string, file: string, status: string): 
   const head = await new Promise<string>((resolve) => {
     cp.execFile(
       "git",
-      ["-C", repoPath, "show", `HEAD:${file}`],
+      ["-C", repoPath, "show", `HEAD:${headPath}`],
       { encoding: "utf8", maxBuffer: 50 * 1024 * 1024 },
       (err, stdout) => resolve(err ? "" : stdout),
     );
@@ -103,11 +123,20 @@ async function openDiffForFile(repoPath: string, file: string, status: string): 
   fs.writeFileSync(tmpPath, head);
 
   const fileName = path.basename(file);
+  const sourceName = sourcePath ? path.basename(sourcePath) : null;
+  // Show "old → new" in the tab title for renames where the basename
+  // actually changed (skip the arrow when only the directory moved, since
+  // both basenames are the same).
+  const title =
+    sourceName && sourceName !== fileName
+      ? `${sourceName} → ${fileName} (HEAD ↔ Working)`
+      : `${fileName} (HEAD ↔ Working)`;
+
   await vscode.commands.executeCommand(
     "vscode.diff",
     vscode.Uri.file(tmpPath),
     vscode.Uri.file(target),
-    `${fileName} (HEAD ↔ Working)`,
+    title,
     showOptions,
   );
 }
@@ -147,12 +176,17 @@ class FileTreeItem extends vscode.TreeItem {
     public readonly repoPath: string,
     public readonly filePath: string,
     public readonly gitStatus: string,
+    // For renamed/copied rows: the HEAD-side path. Used when looking up
+    // the HEAD blob for diffing — without it the lookup fails because
+    // HEAD doesn't have the new path.
+    public readonly sourcePath?: string,
   ) {
     super(path.basename(filePath), vscode.TreeItemCollapsibleState.None);
     const dir = path.dirname(filePath);
     this.id = `file:${repoPath}:${filePath}`;
     this.description = dir === "." ? "" : dir;
-    this.tooltip = `${filePath}\n${gitStatus.trim()} (${statusBadge(gitStatus)})`;
+    const renameNote = sourcePath ? `\nrenamed from ${sourcePath}` : "";
+    this.tooltip = `${filePath}\n${gitStatus.trim()} (${statusBadge(gitStatus)})${renameNote}`;
     // Intentionally NOT setting iconPath: when only resourceUri is set,
     // VSCode hands the file URI to the active icon theme (Material Icon
     // Theme, etc.) and renders the matching file-type icon. Setting
@@ -262,7 +296,9 @@ class WorkspaceChangesProvider implements vscode.TreeDataProvider<WorkspaceTreeI
 
   private async _buildFileNodes(repoNode: RepoTreeItem): Promise<FileTreeItem[]> {
     const status = await getStatus(repoNode.repoPath);
-    return status.map(({ status: s, file }) => new FileTreeItem(repoNode.repoPath, file, s));
+    return status.map(
+      ({ status: s, file, sourcePath }) => new FileTreeItem(repoNode.repoPath, file, s, sourcePath),
+    );
   }
 }
 
@@ -342,7 +378,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand(CMD.openDiff, async (item: unknown) => {
       if (!(item instanceof FileTreeItem)) return;
-      await openDiffForFile(item.repoPath, item.filePath, item.gitStatus);
+      await openDiffForFile(item.repoPath, item.filePath, item.gitStatus, item.sourcePath);
     }),
 
     vscode.commands.registerCommand(CMD.openFile, async (item: unknown) => {

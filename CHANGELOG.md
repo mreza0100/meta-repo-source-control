@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-04-29
+
+### Fixed
+
+- **Renamed files now diff against the correct HEAD-side path.** v0.2.1 fixed the "file not found" error when clicking a rename row, but the resulting diff was wrong — it compared an empty HEAD against the working tree (showing every line as added) because `git show HEAD:<newPath>` returns nothing for a file that exists at a different path in HEAD. Now the parser captures the source path (the HEAD-side path), and the diff compares against the file's content there. Clean renames show no content diff, as expected; renames-with-edits show only the actual changes. Rename rows also now display `oldName → newName (HEAD ↔ Working)` in the diff tab title when the basenames differ.
+
 ## [0.2.1] — 2026-04-29
 
 ### Fixed
