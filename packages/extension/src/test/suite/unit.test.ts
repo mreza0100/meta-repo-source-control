@@ -1,7 +1,7 @@
 import * as assert from "node:assert";
 import { __testing } from "../../extension";
 
-const { statusBadge, shouldIgnorePath, COMMAND_FILE, TMP_DIR_NAME, CMD, VIEW_ID } = __testing;
+const { statusBadge, shouldIgnorePath, TMP_DIR_NAME, CMD, VIEW_ID } = __testing;
 
 suite("statusBadge", () => {
   test("untracked '??' maps to 'U'", () => {
@@ -42,17 +42,12 @@ suite("brand identifiers", () => {
     }
   });
 
-  test("command file path uses metarepo-sc directory", () => {
-    assert.match(COMMAND_FILE, /metarepo-sc/);
-    assert.ok(COMMAND_FILE.endsWith("/cmd"), `expected COMMAND_FILE to end with /cmd, got ${COMMAND_FILE}`);
-  });
-
   test("tmp dir uses metarepo-sc-tmp brand", () => {
     assert.strictEqual(TMP_DIR_NAME, "metarepo-sc-tmp");
   });
 
   test("no legacy wsdiff strings in any constant", () => {
-    const allStrings = [VIEW_ID, COMMAND_FILE, TMP_DIR_NAME, ...Object.values(CMD)];
+    const allStrings = [VIEW_ID, TMP_DIR_NAME, ...Object.values(CMD)];
     for (const s of allStrings) {
       assert.doesNotMatch(s, /wsdiff/i, `legacy 'wsdiff' brand leaked into ${s}`);
     }

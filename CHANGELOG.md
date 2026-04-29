@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-04-29
+
+### Removed
+
+- **CLI bridge** — the `~/.config/metarepo-sc/cmd` watcher that allowed an external shell tool to drive VSCode's diff editor silently is gone. The extension is now standalone and contains only the Workspace Changes tree view.
+- **`metarepo-sc-cli` package** — the companion bash CLI is removed from the repo. It was never published to npm and the workflow it enabled (terminal fzf picker driving live VSCode diffs) is no longer supported.
+
+### Changed
+
+- The marketplace listing has been reframed as a single-purpose extension: "Workspace Changes view for meta-repo workspaces."
+- `~80 lines` of bridge code stripped from `extension.ts`. Bundle is leaner.
+- README now leads with a prominent **devcontainer setup** section, with a copy-pasteable `devcontainer.json` snippet.
+
+### Migration
+
+If you were using v0.1.x of the CLI: it's gone, no replacement. The `~/.config/metarepo-sc/cmd` directory becomes orphaned after upgrading; safe to `rm -rf ~/.config/metarepo-sc/`. Anyone who built integrations against the CLI bridge protocol (`diff\t...`, `open\t...`, `close`) needs to drive VSCode through the standard extension API instead — there's no in-process replacement.
+
 ## [0.1.1] — 2026-04-29
 
 ### Fixed

@@ -1,13 +1,8 @@
 # meta-repo source control
 
-Source control UX for **meta-repo workspaces** — directories that contain many independent git checkouts side-by-side instead of one monorepo.
+A VSCode extension for **meta-repo workspaces** — directories that contain many independent git checkouts side-by-side instead of one monorepo.
 
-This repository ships two things that work together:
-
-| Package                                       | What it does                                                                                                                                                 |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`metarepo-sc`](packages/extension/) (VSCode) | A "Workspace Changes" tree view in the SCM sidebar that hides empty repos and lets you click any file to open its diff. Plus a silent in-process CLI bridge. |
-| [`metarepo-sc-cli`](packages/cli/) (npm CLI)  | A bash/fzf TUI for navigating uncommitted changes across every repo in a workspace. Each arrow keypress opens the live diff in VSCode without focus theft.   |
+Contributes a "Workspace Changes" view to the SCM sidebar that lists only repos with uncommitted changes, expandable to their changed files. Click a file → diff opens in the editor. Clean tree, no per-repo commit clutter, hides empty repos that the native panel can't.
 
 ## Why this exists
 
@@ -15,36 +10,24 @@ VSCode's native Source Control panel was designed for monorepos: one workspace, 
 
 There's no native VSCode setting to hide repos with no changes ([microsoft/vscode#33334](https://github.com/microsoft/vscode/issues/33334), open since 2017) and no setting to hide the commit input. Extensions cannot modify the native SCM panel because VSCode's renderer DOM is not part of the extension API surface.
 
-This project's solution: a separate tree view that shows only dirty repos with no commit clutter, plus a CLI for terminal-side navigation that can drive VSCode's diff editor silently.
+This extension's solution: a separate tree view that does what the native panel won't — show only dirty repos, no commit clutter, real file-type icons, click-to-diff.
 
-## Quick start
+## Install
 
 ```bash
-# Install the VSCode extension from the marketplace
 code --install-extension mattgle.metarepo-sc
-
-# Install the CLI globally (requires Node 20+)
-npm install -g metarepo-sc-cli
-
-# Run the CLI from a meta-repo workspace root
-cd ~/code/my-meta-repo
-metarepo-sc
 ```
 
-The CLI requires `git`, `fzf`, [`bat`](https://github.com/sharkdp/bat), and [`delta`](https://github.com/dandavison/delta) on your `PATH`.
+Or search **"Meta-Repo Source Control"** in the Extensions sidebar.
 
-See each package's README for the full feature list and configuration options:
-
-- [Extension README](packages/extension/) — Workspace Changes view, command-file format, diff opening details
-- [CLI README](packages/cli/) — fzf bindings, env vars, terminal integration
+For devcontainer setup and recommended settings, see the [extension README](packages/extension/README.md#devcontainer-setup).
 
 ## Repository layout
 
 ```
 meta-repo-source-control/
 ├── packages/
-│   ├── extension/          # VSCode extension (TypeScript)
-│   └── cli/                # bash CLI (npm-installable bin)
+│   └── extension/          # VSCode extension (TypeScript, esbuild-bundled)
 ├── eslint.config.mjs       # shared ESLint flat config
 ├── tsconfig.base.json      # shared TS strict base config
 └── package.json            # npm workspaces root
@@ -52,7 +35,7 @@ meta-repo-source-control/
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for setup, build/test commands, and PR guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, build/test commands, and PR guidelines.
 
 ## License
 

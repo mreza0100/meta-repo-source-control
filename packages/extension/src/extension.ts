@@ -1,30 +1,16 @@
 // metarepo-sc — Source control UX for meta-repo workspaces.
 //
-// TWO RESPONSIBILITIES:
-//   1. CLI BRIDGE: watches ~/.config/metarepo-sc/cmd; when an external tool
-//      (e.g. the companion `metarepo-sc` shell script) writes a diff/open
-//      command there, runs it via the VSCode API silently — no focus steal,
-//      no dock bounce, no app activation.
-//   2. TREE VIEW: contributes a "Workspace Changes" view in the SCM sidebar
-//      that lists only repos with uncommitted changes, expandable to their
-//      changed files. Click a file to diff/open it (uses the same in-process
-//      pathway as the CLI bridge — same code, no IPC).
-//
-// COMMAND FILE FORMAT (single tab-separated line, overwritten per command):
-//   diff\t<leftPath>\t<rightPath>\t<title>
-//   open\t<path>
-//   close
+// Contributes a "Workspace Changes" view to the SCM sidebar that lists only
+// repos with uncommitted changes, expandable to their changed files. Click a
+// file to open its working-tree-vs-HEAD diff in the editor.
 
 import * as cp from "node:child_process";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 
-const COMMAND_FILE = path.join(os.homedir(), ".config", "metarepo-sc", "cmd");
 const TMP_DIR_NAME = "metarepo-sc-tmp";
 const LOG_PREFIX = "metarepo-sc";
-const DEBOUNCE_MS = 30;
 const TREE_REFRESH_DEBOUNCE_MS = 500;
 
 const VIEW_ID = "metarepoSc.changes";
@@ -72,24 +58,11 @@ async function getBranch(repoPath: string): Promise<string> {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Diff opening — shared by tree-view clicks and CLI bridge
+// Diff opening — invoked when the user clicks a file row in the tree.
 // ─────────────────────────────────────────────────────────────────────
 
-interface OpenDiffOptions {
-  preserveFocus?: boolean;
-}
-
-async function openDiffForFile(
-  repoPath: string,
-  file: string,
-  status: string,
-  options: OpenDiffOptions = {},
-): Promise<void> {
-  const showOptions = {
-    preserveFocus: options.preserveFocus !== false,
-    preview: true,
-  };
-
+async function openDiffForFile(repoPath: string, file: string, status: string): Promise<void> {
+  const showOptions = { preserveFocus: false, preview: true };
   const target = path.join(repoPath, file);
 
   // Untracked file or directory: just open it (no HEAD to diff against).
@@ -125,58 +98,6 @@ async function openDiffForFile(
     `${fileName} (HEAD ↔ Working)`,
     showOptions,
   );
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// CLI bridge — watches ~/.config/metarepo-sc/cmd
-// ─────────────────────────────────────────────────────────────────────
-
-let lastBridgeContent = "";
-
-async function executeBridgeCommand(line: string): Promise<void> {
-  const [type = "", ...args] = line.split("\t");
-  const showOptions = { preserveFocus: true, preview: true };
-
-  try {
-    if (type === "diff" && args.length >= 2) {
-      const [leftPath = "", rightPath = "", title] = args;
-      const titleText = title || `${path.basename(rightPath)} (HEAD ↔ Working)`;
-      await vscode.commands.executeCommand(
-        "vscode.diff",
-        vscode.Uri.file(leftPath),
-        vscode.Uri.file(rightPath),
-        titleText,
-        showOptions,
-      );
-    } else if (type === "open" && args.length >= 1) {
-      const [target = ""] = args;
-      await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(target), showOptions);
-    } else if (type === "close") {
-      await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
-    }
-  } catch (err) {
-    console.error(`${LOG_PREFIX}: bridge command failed`, { line, err });
-  }
-}
-
-function readAndDispatchBridge(): void {
-  let content: string;
-  try {
-    content = fs.readFileSync(COMMAND_FILE, "utf8");
-  } catch {
-    return;
-  }
-  if (content === lastBridgeContent) return;
-  lastBridgeContent = content;
-
-  const lines = content
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
-  if (lines.length === 0) return;
-  const lastLine = lines[lines.length - 1];
-  if (lastLine === undefined) return;
-  void executeBridgeCommand(lastLine);
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -226,8 +147,6 @@ class FileTreeItem extends vscode.TreeItem {
     // iconPath would override and force a generic codicon.
     this.resourceUri = vscode.Uri.file(path.join(repoPath, filePath));
     this.contextValue = "file";
-    // Single-click → diff. Focus moves to the editor since this is an
-    // explicit click (unlike fzf navigation where preserveFocus matters).
     this.command = {
       command: CMD.openDiff,
       title: "Open Diff",
@@ -357,35 +276,6 @@ function shouldIgnorePath(fsPath: string): boolean {
 // ─────────────────────────────────────────────────────────────────────
 
 export function activate(context: vscode.ExtensionContext): void {
-  // ── CLI bridge ─────────────────────────────────────────────────────
-  fs.mkdirSync(path.dirname(COMMAND_FILE), { recursive: true });
-  if (!fs.existsSync(COMMAND_FILE)) fs.writeFileSync(COMMAND_FILE, "");
-
-  // Seed lastBridgeContent with whatever's already in the file so we don't
-  // replay stale commands from a previous session when a fresh VSCode window
-  // opens (e.g. via `code <file>` from the terminal). Subsequent writes to
-  // the file during this session still dispatch normally — the watcher
-  // compares against this baseline, sees the change, and fires.
-  try {
-    lastBridgeContent = fs.readFileSync(COMMAND_FILE, "utf8");
-  } catch {
-    // File doesn't exist yet on first ever activation; will be created on
-    // first CLI write.
-  }
-
-  let bridgeDebounce: NodeJS.Timeout | null = null;
-  const bridgeWatcher = fs.watch(COMMAND_FILE, () => {
-    if (bridgeDebounce) clearTimeout(bridgeDebounce);
-    bridgeDebounce = setTimeout(readAndDispatchBridge, DEBOUNCE_MS);
-  });
-  context.subscriptions.push({
-    dispose: () => {
-      if (bridgeDebounce) clearTimeout(bridgeDebounce);
-      bridgeWatcher.close();
-    },
-  });
-
-  // ── Tree view ──────────────────────────────────────────────────────
   const provider = new WorkspaceChangesProvider();
   const tree = vscode.window.createTreeView<WorkspaceTreeItem>(VIEW_ID, {
     treeDataProvider: provider,
@@ -397,10 +287,10 @@ export function activate(context: vscode.ExtensionContext): void {
   //   1. Intent-aware events (onDidSaveTextDocument etc.) — fire fast for
   //      VSCode-internal file changes; preferred path for in-editor saves.
   //   2. Broad filesystem watcher — catches changes from external tools
-  //      (terminal git, agents like Claude Code, other editors) that
-  //      bypass VSCode's API events. shouldIgnorePath() filters out the
-  //      noisy paths that would otherwise cause constant refresh churn
-  //      (.git internals, .tsbuildinfo from the TS daemon, etc.).
+  //      (terminal git, agents, other editors) that bypass VSCode's API
+  //      events. shouldIgnorePath() filters out the noisy paths that
+  //      would otherwise cause constant refresh churn (.git internals,
+  //      .tsbuildinfo from the TS daemon, etc.).
   let refreshTimer: NodeJS.Timeout | null = null;
   const scheduleRefresh = (delay: number = TREE_REFRESH_DEBOUNCE_MS): void => {
     if (refreshTimer) clearTimeout(refreshTimer);
@@ -435,15 +325,12 @@ export function activate(context: vscode.ExtensionContext): void {
     externalWatcher,
   );
 
-  // ── Commands ───────────────────────────────────────────────────────
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.refresh, () => provider.refresh()),
 
     vscode.commands.registerCommand(CMD.openDiff, async (item: unknown) => {
       if (!(item instanceof FileTreeItem)) return;
-      await openDiffForFile(item.repoPath, item.filePath, item.gitStatus, {
-        preserveFocus: false,
-      });
+      await openDiffForFile(item.repoPath, item.filePath, item.gitStatus);
     }),
 
     vscode.commands.registerCommand(CMD.openFile, async (item: unknown) => {
@@ -522,7 +409,6 @@ export function deactivate(): void {
 export const __testing = {
   statusBadge,
   shouldIgnorePath,
-  COMMAND_FILE,
   TMP_DIR_NAME,
   CMD,
   VIEW_ID,

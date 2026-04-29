@@ -2,7 +2,7 @@
   "name": "metarepo-sc",
   "displayName": "Meta-Repo Source Control",
   "description": "Source control UX for meta-repo workspaces — a Workspace Changes tree view that hides empty repos, plus a silent CLI bridge.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "mattgle",
   "license": "MIT",
   "icon": "icon.png",
