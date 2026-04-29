@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-04-29
+
+### Fixed
+
+- **Discard Changes now works on renamed files.** Previously, clicking Discard on a rename row appeared to do nothing — the modal closed but the rename stayed. Root cause: `git checkout HEAD -- <newPath>` errors because HEAD has no entry for the new path, and the shared `execGit` helper was swallowing the error silently. Discard for renames now uses `git restore --source=HEAD --staged --worktree -- <oldPath> <newPath>`, which atomically restores the old path and removes the new one.
+- **Discard failures now surface as error messages instead of silently disappearing.** Mutating git commands (rather than read-only ones) get error reporting that includes git's stderr, so future failures show in a notification instead of looking like a non-event.
+
+### Changed
+
+- The Discard modal now uses **"Undo Rename"** as the confirm-button label and a clearer warning message ("the new file will be removed and the original restored") when the row is a rename. Untracked-file delete and regular-file discard messages are unchanged.
+
 ## [0.2.2] — 2026-04-29
 
 ### Fixed

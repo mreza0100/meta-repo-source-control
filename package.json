@@ -2,7 +2,7 @@
   "name": "metarepo-sc",
   "displayName": "Meta-Repo Source Control",
   "description": "Workspace Changes tree view for meta-repo workspaces — directories of side-by-side git checkouts. Hides repos with no changes, click-to-diff per file, auto-refreshes on external edits.",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "publisher": "mattgle",
   "license": "MIT",
   "author": "mattgle",

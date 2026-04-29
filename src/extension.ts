@@ -415,29 +415,58 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     // Discard mirrors VSCode's native SCM behaviour:
-    //   * Tracked file → `git checkout HEAD -- <file>` (resets index AND
-    //     worktree to HEAD in one command, wiping staged + unstaged).
-    //   * Untracked file → just delete from disk.
+    //   * Untracked file → delete from disk.
+    //   * Renamed/copied → `git restore --source=HEAD --staged --worktree
+    //     -- <oldPath> <newPath>`. This atomically restores the old path
+    //     (which exists at HEAD) and removes the new path (which doesn't).
+    //     Plain `git checkout HEAD -- <newPath>` would error because HEAD
+    //     has no entry for the new path.
+    //   * Otherwise tracked → `git checkout HEAD -- <file>` (resets index
+    //     AND worktree to HEAD in one command, wiping staged + unstaged).
     // A modal warning blocks accidental clicks; cancelling is safe.
     vscode.commands.registerCommand(CMD.discardChanges, async (item: unknown) => {
       if (!(item instanceof FileTreeItem)) return;
       const fileName = path.basename(item.filePath);
       const isUntracked = item.gitStatus.includes("?");
+      const isRename = !!item.sourcePath;
 
       const message = isUntracked
         ? `Are you sure you want to DELETE the following file?\n\n${fileName}\n\nThis is IRREVERSIBLE!`
-        : `Are you sure you want to discard changes in '${fileName}'?\n\nThis is IRREVERSIBLE!`;
-      const confirmLabel = isUntracked ? "Delete File" : "Discard Changes";
+        : isRename
+          ? `Are you sure you want to undo this rename?\n\n${item.sourcePath} → ${item.filePath}\n\nThe new file will be removed and the original restored. This is IRREVERSIBLE!`
+          : `Are you sure you want to discard changes in '${fileName}'?\n\nThis is IRREVERSIBLE!`;
+      const confirmLabel = isUntracked ? "Delete File" : isRename ? "Undo Rename" : "Discard Changes";
 
       const choice = await vscode.window.showWarningMessage(message, { modal: true }, confirmLabel);
       if (choice !== confirmLabel) return;
+
+      // Run git and surface failures explicitly. The shared `execGit` helper
+      // swallows errors (returns "" on failure) which is fine for read-only
+      // queries but hides real problems for mutating commands like discard.
+      const runGit = (args: string[]): Promise<void> =>
+        new Promise((resolve, reject) => {
+          cp.execFile("git", ["-C", item.repoPath, ...args], { encoding: "utf8" }, (err, _stdout, stderr) => {
+            if (err) reject(new Error(stderr.trim() || err.message));
+            else resolve();
+          });
+        });
 
       const fullPath = path.join(item.repoPath, item.filePath);
       try {
         if (isUntracked) {
           await fs.promises.unlink(fullPath);
+        } else if (isRename && item.sourcePath) {
+          await runGit([
+            "restore",
+            "--source=HEAD",
+            "--staged",
+            "--worktree",
+            "--",
+            item.sourcePath,
+            item.filePath,
+          ]);
         } else {
-          await execGit(item.repoPath, ["checkout", "HEAD", "--", item.filePath]);
+          await runGit(["checkout", "HEAD", "--", item.filePath]);
         }
         provider.refresh();
       } catch (err) {
