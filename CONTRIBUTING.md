@@ -91,7 +91,32 @@ PR descriptions should explain _what_ changed and _why_, written for reviewers w
 
 ## Releasing
 
-Releases are triggered by pushing a tag matching `v*.*.*` (handled by `.github/workflows/release.yml`). The workflow packages the extension VSIX and attaches it to the GitHub Release. Marketplace publishing (`vsce publish`) requires a `VSCE_PAT` repository secret — see [the VSCode publishing guide](https://code.visualstudio.com/api/working-with-extensions/publishing-extension).
+The marketplace publish flow is **manual upload** via the publisher portal at <https://marketplace.visualstudio.com/manage>. This path needs no Azure DevOps account, no PAT, and no Azure subscription — only your Microsoft account login.
+
+Per release:
+
+1. Bump `version` in `packages/extension/package.json`
+2. Move the `## [Unreleased]` notes in `CHANGELOG.md` under a new versioned section
+3. Commit and tag:
+
+   ```bash
+   git commit -am "chore: release v0.1.X"
+   git tag v0.1.X
+   git push && git push origin v0.1.X
+   ```
+
+4. The `release.yml` workflow auto-builds the VSIX and attaches it to a GitHub Release for the tag (~1 minute)
+5. Download the VSIX from the GitHub Release page (or use your local `dist/metarepo-sc-0.1.X.vsix`) and drag-drop it at <https://marketplace.visualstudio.com/manage>. Marketplace validation takes ~2 minutes.
+
+Total active time per release: ~30 seconds.
+
+### Optional: automated marketplace publish (advanced)
+
+`release.yml` also has a `vsce publish` step that runs automatically when a `VSCE_PAT` repository secret exists, and silently skips otherwise.
+
+Wiring up `VSCE_PAT` requires an Azure DevOps organization linked to an active Azure subscription. As of 2026, Microsoft blocks creating a new Azure DevOps org on a personal Microsoft account without putting a credit card on file (even for the free tier). Most personal-account publishers skip this — the manual drag-drop above is fast enough that automating it isn't worth fighting Azure DevOps for.
+
+If you do want it: register the PAT with `Marketplace > Manage` scope (and `All accessible organizations` selected) at `https://dev.azure.com/<org>/_usersSettings/tokens`, then `gh secret set VSCE_PAT`. The next tag push will publish automatically.
 
 ## Reporting bugs
 
