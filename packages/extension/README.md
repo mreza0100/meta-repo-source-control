@@ -99,7 +99,7 @@ If you'd rather have a "click-through" workflow where each new diff replaces the
   // view — keeps the editor pane to one diff at a time.
   "workbench.editor.limit.enabled": true,
   "workbench.editor.limit.value": 1,
-  "workbench.editor.limit.perEditorGroup": false
+  "workbench.editor.limit.perEditorGroup": false,
 }
 ```
 
