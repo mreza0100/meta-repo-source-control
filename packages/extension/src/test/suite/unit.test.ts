@@ -1,7 +1,7 @@
 import * as assert from "node:assert";
 import { __testing } from "../../extension";
 
-const { statusBadge, COMMAND_FILE, TMP_DIR_NAME, CMD, VIEW_ID } = __testing;
+const { statusBadge, shouldIgnorePath, COMMAND_FILE, TMP_DIR_NAME, CMD, VIEW_ID } = __testing;
 
 suite("statusBadge", () => {
   test("untracked '??' maps to 'U'", () => {
@@ -56,5 +56,47 @@ suite("brand identifiers", () => {
     for (const s of allStrings) {
       assert.doesNotMatch(s, /wsdiff/i, `legacy 'wsdiff' brand leaked into ${s}`);
     }
+  });
+});
+
+suite("shouldIgnorePath", () => {
+  test("ignores .git internals (covers our own metarepo-sc-tmp writes)", () => {
+    assert.strictEqual(shouldIgnorePath("/repo/.git/metarepo-sc-tmp/file.ts"), true);
+    assert.strictEqual(shouldIgnorePath("/repo/.git/index"), true);
+    assert.strictEqual(shouldIgnorePath("/repo/.git/HEAD"), true);
+  });
+
+  test("ignores node_modules and build outputs", () => {
+    assert.strictEqual(shouldIgnorePath("/repo/node_modules/foo/index.js"), true);
+    assert.strictEqual(shouldIgnorePath("/repo/dist/extension.js"), true);
+    assert.strictEqual(shouldIgnorePath("/repo/out/test/runTest.js"), true);
+    assert.strictEqual(shouldIgnorePath("/repo/build/output.bin"), true);
+    assert.strictEqual(shouldIgnorePath("/repo/coverage/lcov.info"), true);
+  });
+
+  test("ignores TS daemon and editor swap files", () => {
+    assert.strictEqual(shouldIgnorePath("/repo/tsconfig.tsbuildinfo"), true);
+    assert.strictEqual(shouldIgnorePath("/repo/build.log"), true);
+    assert.strictEqual(shouldIgnorePath("/repo/.foo.swp"), true);
+    assert.strictEqual(shouldIgnorePath("/repo/.bar.swo"), true);
+  });
+
+  test("ignores OS metadata files", () => {
+    assert.strictEqual(shouldIgnorePath("/repo/src/.DS_Store"), true);
+    assert.strictEqual(shouldIgnorePath("/repo/Thumbs.db"), true);
+  });
+
+  test("does NOT ignore real source files", () => {
+    assert.strictEqual(shouldIgnorePath("/repo/src/extension.ts"), false);
+    assert.strictEqual(shouldIgnorePath("/repo/README.md"), false);
+    assert.strictEqual(shouldIgnorePath("/repo/package.json"), false);
+    assert.strictEqual(shouldIgnorePath("/repo/test/file.bats"), false);
+  });
+
+  test("does NOT ignore files merely containing denylisted substrings outside path segments", () => {
+    // 'distance.ts' contains 'dist' but isn't in a /dist/ directory.
+    assert.strictEqual(shouldIgnorePath("/repo/src/distance.ts"), false);
+    // 'mygit.ts' contains 'git' but isn't in /.git/.
+    assert.strictEqual(shouldIgnorePath("/repo/src/mygit.ts"), false);
   });
 });

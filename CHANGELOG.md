@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-04-29
+
+### Fixed
+
+- **CLI bridge no longer replays stale commands on cold start.** Opening a fresh VSCode window via `code <file>` had been popping up the last diff from the previous session, stealing focus from the file you actually wanted. Activation now seeds the bridge with the file's current content as a baseline, so only writes that happen after the extension activates are dispatched.
+- **Workspace Changes view now refreshes on external edits.** External tools (terminal git, agents like Claude Code, other editors) that bypass the VSCode API used to leave the view stale until you clicked refresh. A debounced filesystem watcher now catches those changes, with a path filter (`shouldIgnorePath`) that excludes `.git/`, `node_modules/`, build outputs, TS incremental build state, and OS metadata to avoid refresh churn.
+
 ## [0.1.0] — 2026-04-29
 
 ### Added

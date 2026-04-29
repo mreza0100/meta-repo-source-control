@@ -335,6 +335,23 @@ class WorkspaceChangesProvider implements vscode.TreeDataProvider<WorkspaceTreeI
   }
 }
 
+// Path filter for the broad filesystem watcher. We want to refresh on
+// real source changes but ignore paths that change constantly without
+// affecting `git status` output: our own HEAD-blob writes, dependency
+// install churn, build outputs, TS incremental build state, OS cruft.
+//
+// Returns true if the path should be ignored (refresh suppressed).
+function shouldIgnorePath(fsPath: string): boolean {
+  const segmentDenylist = ["/.git/", "/node_modules/", "/dist/", "/out/", "/build/", "/coverage/"];
+  if (segmentDenylist.some((s) => fsPath.includes(s))) return true;
+
+  const extensionDenylist = [".tsbuildinfo", ".log", ".swp", ".swo"];
+  if (extensionDenylist.some((ext) => fsPath.endsWith(ext))) return true;
+
+  const basenameDenylist = [".DS_Store", "Thumbs.db"];
+  return basenameDenylist.some((b) => fsPath.endsWith("/" + b));
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Activation
 // ─────────────────────────────────────────────────────────────────────
@@ -343,6 +360,18 @@ export function activate(context: vscode.ExtensionContext): void {
   // ── CLI bridge ─────────────────────────────────────────────────────
   fs.mkdirSync(path.dirname(COMMAND_FILE), { recursive: true });
   if (!fs.existsSync(COMMAND_FILE)) fs.writeFileSync(COMMAND_FILE, "");
+
+  // Seed lastBridgeContent with whatever's already in the file so we don't
+  // replay stale commands from a previous session when a fresh VSCode window
+  // opens (e.g. via `code <file>` from the terminal). Subsequent writes to
+  // the file during this session still dispatch normally — the watcher
+  // compares against this baseline, sees the change, and fires.
+  try {
+    lastBridgeContent = fs.readFileSync(COMMAND_FILE, "utf8");
+  } catch {
+    // File doesn't exist yet on first ever activation; will be created on
+    // first CLI write.
+  }
 
   let bridgeDebounce: NodeJS.Timeout | null = null;
   const bridgeWatcher = fs.watch(COMMAND_FILE, () => {
@@ -355,7 +384,6 @@ export function activate(context: vscode.ExtensionContext): void {
       bridgeWatcher.close();
     },
   });
-  setTimeout(readAndDispatchBridge, 100);
 
   // ── Tree view ──────────────────────────────────────────────────────
   const provider = new WorkspaceChangesProvider();
@@ -365,16 +393,25 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   context.subscriptions.push(tree);
 
-  // Refresh on intent-aware events only — not on every disk wiggle. A
-  // broad file watcher (`**/*`) would fire for our own .git/metarepo-sc-tmp
-  // writes, TS language service .tsbuildinfo updates, auto-saves, and so
-  // on, producing a constant "loading" state. These four sources cover
-  // every actual change without the noise.
+  // Two refresh sources, deduped by a single debounced timer:
+  //   1. Intent-aware events (onDidSaveTextDocument etc.) — fire fast for
+  //      VSCode-internal file changes; preferred path for in-editor saves.
+  //   2. Broad filesystem watcher — catches changes from external tools
+  //      (terminal git, agents like Claude Code, other editors) that
+  //      bypass VSCode's API events. shouldIgnorePath() filters out the
+  //      noisy paths that would otherwise cause constant refresh churn
+  //      (.git internals, .tsbuildinfo from the TS daemon, etc.).
   let refreshTimer: NodeJS.Timeout | null = null;
   const scheduleRefresh = (delay: number = TREE_REFRESH_DEBOUNCE_MS): void => {
     if (refreshTimer) clearTimeout(refreshTimer);
     refreshTimer = setTimeout(() => provider.refresh(), delay);
   };
+
+  const onExternalChange = (uri: vscode.Uri): void => {
+    if (shouldIgnorePath(uri.fsPath)) return;
+    scheduleRefresh();
+  };
+  const externalWatcher = vscode.workspace.createFileSystemWatcher("**/*");
 
   context.subscriptions.push(
     // User saved a file (the most common trigger).
@@ -390,6 +427,12 @@ export function activate(context: vscode.ExtensionContext): void {
     tree.onDidChangeVisibility((e) => {
       if (e.visible) scheduleRefresh(0);
     }),
+    // External changes — terminal git, agents, other editors. Filtered
+    // through shouldIgnorePath() to avoid TS daemon / build-output churn.
+    externalWatcher.onDidChange(onExternalChange),
+    externalWatcher.onDidCreate(onExternalChange),
+    externalWatcher.onDidDelete(onExternalChange),
+    externalWatcher,
   );
 
   // ── Commands ───────────────────────────────────────────────────────
@@ -478,6 +521,7 @@ export function deactivate(): void {
 // Exported for unit tests; not part of the public extension surface.
 export const __testing = {
   statusBadge,
+  shouldIgnorePath,
   COMMAND_FILE,
   TMP_DIR_NAME,
   CMD,
