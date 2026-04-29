@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] — 2026-04-29
+
+### Added
+
+- **Empty-state welcome content.** When every repo is clean (or there are no repos), the Workspace Changes view now shows a friendly message ("no changes to show. edited files will appear here as you save them.") with a Refresh action button instead of a blank pane. Implemented via VSCode's `viewsWelcome` contribution point — purely declarative, no extension code change.
+
 ## [0.2.3] — 2026-04-29
 
 ### Fixed

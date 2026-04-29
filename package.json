@@ -2,7 +2,7 @@
   "name": "metarepo-sc",
   "displayName": "Meta-Repo Source Control",
   "description": "Workspace Changes tree view for meta-repo workspaces — directories of side-by-side git checkouts. Hides repos with no changes, click-to-diff per file, auto-refreshes on external edits.",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "publisher": "mattgle",
   "license": "MIT",
   "author": "mattgle",
@@ -110,7 +110,13 @@
           "group": "inline@2"
         }
       ]
-    }
+    },
+    "viewsWelcome": [
+      {
+        "view": "metarepoSc.changes",
+        "contents": "no changes to show.\nedited files will appear here as you save them.\n\n[Refresh](command:metarepoSc.refresh)"
+      }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs --production",
