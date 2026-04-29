@@ -134,7 +134,7 @@ fi
   --ansi \
   --delimiter=$'\t' \
   --with-nth=1 \
-  --header='arrow: live diff in VSCode  •  enter/ctrl-r: reload  •  ctrl-e: $EDITOR  •  esc: quit' \
+  --header="arrow: live diff in VSCode  •  enter/ctrl-r: reload  •  ctrl-e: \$EDITOR  •  esc: quit" \
   --bind="focus:execute-silent($SELF --open {2} {3} {4} &)" \
   --bind="enter:reload($SELF --collect)" \
   --bind="ctrl-e:execute(cd {2} && \${EDITOR:-vim} {3})+reload($SELF --collect)" \
