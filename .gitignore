@@ -8,8 +8,6 @@ out/
 
 # VSCode extension packaging
 *.vsix
-# LICENSE in packages/extension/ is auto-copied from root by `npm run prepackage`
-packages/extension/LICENSE
 
 # Test coverage
 coverage/

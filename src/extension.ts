@@ -40,6 +40,18 @@ interface FileStatus {
   file: string;
 }
 
+// Parse one line of `git status --porcelain` into status + file. Renames
+// (and copies) come through as "old -> new"; we keep only the new (current)
+// path so file operations target a real on-disk path instead of the
+// mangled "old -> new" string.
+function parseStatusLine(line: string): FileStatus {
+  const status = line.slice(0, 2);
+  const filePart = line.slice(3);
+  const arrowIdx = filePart.indexOf(" -> ");
+  const file = arrowIdx >= 0 ? filePart.slice(arrowIdx + 4) : filePart;
+  return { status, file };
+}
+
 async function getStatus(repoPath: string): Promise<FileStatus[]> {
   // --untracked-files=all expands untracked directories to their individual
   // files, matching VSCode's native SCM panel. Default is `normal` which
@@ -49,7 +61,7 @@ async function getStatus(repoPath: string): Promise<FileStatus[]> {
   return stdout
     .split("\n")
     .filter((l) => l.length > 3)
-    .map((l) => ({ status: l.slice(0, 2), file: l.slice(3) }));
+    .map(parseStatusLine);
 }
 
 async function getBranch(repoPath: string): Promise<string> {
@@ -409,6 +421,7 @@ export function deactivate(): void {
 export const __testing = {
   statusBadge,
   shouldIgnorePath,
+  parseStatusLine,
   TMP_DIR_NAME,
   CMD,
   VIEW_ID,

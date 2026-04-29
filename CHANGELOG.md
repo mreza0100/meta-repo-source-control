@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-04-29
+
+### Fixed
+
+- **Renamed files (`R old -> new` rows) can now be opened from the tree view.** The git status parser was stuffing the entire `"old -> new"` string into the file path, so click-to-diff produced "file not found" errors. Now splits on the arrow and uses the destination (current) path.
+
+### Changed
+
+- **Repository structure flattened to a single-package layout.** Dropped the `packages/extension/` nesting and the unused `tsconfig.base.json`. The repo is now a normal VSCode extension repo, not a monorepo. No user-visible behavior change — bundle is identical.
+
 ## [0.2.0] — 2026-04-29
 
 ### Removed

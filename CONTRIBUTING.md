@@ -15,24 +15,21 @@ cd meta-repo-source-control
 npm install
 ```
 
-`npm install` resolves dependencies for the extension workspace.
-
 ## Common commands
 
-All commands work from the repository root.
-
-| Command                | Effect                                                                    |
-| ---------------------- | ------------------------------------------------------------------------- |
-| `npm run build`        | Bundle the extension via esbuild (`packages/extension/dist/extension.js`) |
-| `npm run lint`         | ESLint on the extension TS                                                |
-| `npm run lint:fix`     | Apply ESLint auto-fixes                                                   |
-| `npm run format`       | Apply Prettier to all source files                                        |
-| `npm run format:check` | Verify all files match Prettier style (CI uses this)                      |
-| `npm run test`         | Run extension Mocha + `@vscode/test-electron` suite                       |
+| Command                | Effect                                                          |
+| ---------------------- | --------------------------------------------------------------- |
+| `npm run build`        | Bundle the extension via esbuild (`dist/extension.js`)          |
+| `npm run lint`         | ESLint on `src/`                                                |
+| `npm run lint:fix`     | Apply ESLint auto-fixes                                         |
+| `npm run format`       | Apply Prettier to all source files                              |
+| `npm run format:check` | Verify all files match Prettier style (CI uses this)            |
+| `npm run test`         | Run Mocha + `@vscode/test-electron` suite                       |
+| `npm run package`      | Build + create a `.vsix` in `dist/` for local install / publish |
 
 ## Testing locally
 
-The test suite uses [`@vscode/test-electron`](https://github.com/microsoft/vscode-test) to download a pristine VSCode and run inside it. The first run downloads VSCode (~120 MB) into `packages/extension/.vscode-test/` (gitignored).
+The test suite uses [`@vscode/test-electron`](https://github.com/microsoft/vscode-test) to download a pristine VSCode and run inside it. The first run downloads VSCode (~120 MB) into `.vscode-test/` (gitignored).
 
 ```bash
 npm run test
@@ -41,17 +38,15 @@ npm run test
 To install your in-development extension into your real VSCode:
 
 ```bash
-cd packages/extension
-npm run build               # produces dist/extension.js
-npx vsce package --no-dependencies --out /tmp/metarepo-sc.vsix
-code --install-extension /tmp/metarepo-sc.vsix
+npm run package
+code --install-extension dist/metarepo-sc-*.vsix
 ```
 
 Then `Cmd+Shift+P → Developer: Reload Window` to pick it up.
 
 ## Code style
 
-- **TypeScript**: strict mode (`tsconfig.base.json`). Run `npm run lint:fix && npm run format` before committing.
+- **TypeScript**: strict mode (see `tsconfig.json`). Run `npm run lint:fix && npm run format` before committing.
 - **Formatting**: Prettier with `printWidth: 110`; everything else is Prettier defaults.
 - **Comments**: explain _why_, not _what_. Don't add comments for things a reader can infer from well-named code.
 
@@ -73,7 +68,7 @@ The marketplace publish flow is **manual upload** via the publisher portal at <h
 
 Per release:
 
-1. Bump `version` in `packages/extension/package.json`
+1. Bump `version` in `package.json`
 2. Move the `## [Unreleased]` notes in `CHANGELOG.md` under a new versioned section
 3. Commit and tag:
 

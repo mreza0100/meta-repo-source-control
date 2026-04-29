@@ -1,7 +1,7 @@
 import * as assert from "node:assert";
 import { __testing } from "../../extension";
 
-const { statusBadge, shouldIgnorePath, TMP_DIR_NAME, CMD, VIEW_ID } = __testing;
+const { statusBadge, shouldIgnorePath, parseStatusLine, TMP_DIR_NAME, CMD, VIEW_ID } = __testing;
 
 suite("statusBadge", () => {
   test("untracked '??' maps to 'U'", () => {
@@ -93,5 +93,43 @@ suite("shouldIgnorePath", () => {
     assert.strictEqual(shouldIgnorePath("/repo/src/distance.ts"), false);
     // 'mygit.ts' contains 'git' but isn't in /.git/.
     assert.strictEqual(shouldIgnorePath("/repo/src/mygit.ts"), false);
+  });
+});
+
+suite("parseStatusLine", () => {
+  test("regular modified file (M flag, no rename)", () => {
+    assert.deepStrictEqual(parseStatusLine("M  src/foo.ts"), { status: "M ", file: "src/foo.ts" });
+  });
+
+  test("untracked file (?? prefix)", () => {
+    assert.deepStrictEqual(parseStatusLine("?? newfile.txt"), { status: "??", file: "newfile.txt" });
+  });
+
+  test("unstaged modification ( M)", () => {
+    assert.deepStrictEqual(parseStatusLine(" M src/extension.ts"), {
+      status: " M",
+      file: "src/extension.ts",
+    });
+  });
+
+  test("renamed file: takes destination path, not 'old -> new' string", () => {
+    assert.deepStrictEqual(parseStatusLine("R  packages/extension/esbuild.mjs -> esbuild.mjs"), {
+      status: "R ",
+      file: "esbuild.mjs",
+    });
+  });
+
+  test("renamed file with deeper paths on both sides", () => {
+    assert.deepStrictEqual(parseStatusLine("R  src/old/dir/file.ts -> src/new/dir/file.ts"), {
+      status: "R ",
+      file: "src/new/dir/file.ts",
+    });
+  });
+
+  test("copied file (C flag) also splits on -> and takes destination", () => {
+    assert.deepStrictEqual(parseStatusLine("C  src/original.ts -> src/copy.ts"), {
+      status: "C ",
+      file: "src/copy.ts",
+    });
   });
 });

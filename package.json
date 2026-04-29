@@ -1,32 +1,143 @@
 {
   "name": "metarepo-sc",
-  "version": "0.0.0",
-  "private": true,
-  "description": "Source control UX for meta-repo workspaces — VSCode extension and companion CLI for directories of side-by-side git checkouts.",
+  "displayName": "Meta-Repo Source Control",
+  "description": "Workspace Changes tree view for meta-repo workspaces — directories of side-by-side git checkouts. Hides repos with no changes, click-to-diff per file, auto-refreshes on external edits.",
+  "version": "0.2.1",
+  "publisher": "mattgle",
   "license": "MIT",
   "author": "mattgle",
+  "icon": "icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/mattgle/meta-repo-source-control.git"
   },
-  "workspaces": [
-    "packages/*"
-  ],
+  "homepage": "https://github.com/mattgle/meta-repo-source-control#readme",
+  "bugs": {
+    "url": "https://github.com/mattgle/meta-repo-source-control/issues"
+  },
   "engines": {
-    "node": ">=20"
+    "node": ">=20",
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "keywords": [
+    "meta-repo",
+    "monorepo",
+    "multi-repo",
+    "git",
+    "source control",
+    "scm",
+    "diff",
+    "workspace"
+  ],
+  "galleryBanner": {
+    "color": "#1a1f2e",
+    "theme": "dark"
+  },
+  "markdown": "github",
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "views": {
+      "scm": [
+        {
+          "id": "metarepoSc.changes",
+          "name": "Workspace Changes",
+          "icon": "$(repo-pull)",
+          "contextualTitle": "Workspace Changes"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "metarepoSc.refresh",
+        "title": "Refresh Workspace Changes",
+        "category": "Meta-Repo SC",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "metarepoSc.openDiff",
+        "title": "Open Diff",
+        "category": "Meta-Repo SC",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "metarepoSc.openFile",
+        "title": "Open File",
+        "category": "Meta-Repo SC",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "metarepoSc.expandAll",
+        "title": "Expand All Repos",
+        "category": "Meta-Repo SC",
+        "icon": "$(expand-all)"
+      },
+      {
+        "command": "metarepoSc.discardChanges",
+        "title": "Discard Changes",
+        "category": "Meta-Repo SC",
+        "icon": "$(discard)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "metarepoSc.refresh",
+          "when": "view == metarepoSc.changes",
+          "group": "navigation@1"
+        },
+        {
+          "command": "metarepoSc.expandAll",
+          "when": "view == metarepoSc.changes",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "metarepoSc.openFile",
+          "when": "view == metarepoSc.changes && viewItem == file",
+          "group": "inline@1"
+        },
+        {
+          "command": "metarepoSc.discardChanges",
+          "when": "view == metarepoSc.changes && viewItem == file",
+          "group": "inline@2"
+        }
+      ]
+    }
   },
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
-    "lint:fix": "npm run lint:fix --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "build": "node esbuild.mjs --production",
+    "watch": "node esbuild.mjs --watch",
+    "compile": "tsc --noEmit",
+    "compile-tests": "tsc",
+    "lint": "eslint src --no-error-on-unmatched-pattern",
+    "lint:fix": "eslint src --fix --no-error-on-unmatched-pattern",
     "format": "prettier --write \"**/*.{ts,js,json,md,yml}\"",
-    "format:check": "prettier --check \"**/*.{ts,js,json,md,yml}\""
+    "format:check": "prettier --check \"**/*.{ts,js,json,md,yml}\"",
+    "pretest": "npm run compile-tests && npm run lint",
+    "test": "node ./out/test/runTest.js",
+    "prepackage": "mkdir -p dist",
+    "package": "vsce package --no-dependencies --out dist/",
+    "vscode:prepublish": "npm run build"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@types/mocha": "^10.0.0",
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.4.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.24.0",
     "eslint": "^9.0.0",
     "eslint-config-prettier": "^9.0.0",
+    "mocha": "^10.0.0",
     "prettier": "^3.0.0",
     "typescript": "^5.5.0",
     "typescript-eslint": "^8.0.0"

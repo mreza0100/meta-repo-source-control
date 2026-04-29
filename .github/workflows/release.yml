@@ -24,10 +24,10 @@ jobs:
         run: npm ci
 
       - name: Build extension
-        run: npm run build --workspace metarepo-sc
+        run: npm run build
 
       - name: Package VSIX
-        run: npm run package --workspace metarepo-sc
+        run: npm run package
 
       - name: Locate built VSIX
         id: vsix
@@ -56,5 +56,4 @@ jobs:
             echo "To enable: add a VSCE_PAT secret in Settings -> Secrets and variables -> Actions."
             exit 0
           fi
-          cd packages/extension
           npx vsce publish --pat "$VSCE_PAT" --no-dependencies

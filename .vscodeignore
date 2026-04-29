@@ -3,9 +3,11 @@
 src/**
 out/**
 node_modules/**
+dist/**/*.map
 .gitignore
 .npmignore
 .editorconfig
+.nvmrc
 .eslintrc*
 eslint.config.*
 .prettierrc*
@@ -18,4 +20,5 @@ esbuild.mjs
 **/*.ts
 **/*.test.*
 .github/**
-**/CHANGELOG.md.bak
+package-lock.json
+CONTRIBUTING.md
