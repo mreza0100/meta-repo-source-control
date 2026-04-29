@@ -51,19 +51,12 @@ To make the extension load automatically in a devcontainer, add it to `.devconta
   "customizations": {
     "vscode": {
       "extensions": ["mattgle.metarepo-sc"],
-      "settings": {
-        // Auto-close older diff tabs as you click through files in the
-        // tree view — keeps the editor pane to one diff at a time.
-        "workbench.editor.limit.enabled": true,
-        "workbench.editor.limit.value": 1,
-        "workbench.editor.limit.perEditorGroup": false,
-      },
     },
   },
 }
 ```
 
-When the container is built, VSCode auto-installs the extension and applies the recommended settings. **No Dockerfile changes are needed** — the extension has no native dependencies beyond `git`, which every common base image already has (`mcr.microsoft.com/devcontainers/*`, `ubuntu`, `debian`, `alpine` with `apk add git`, etc.).
+When the container is built, VSCode auto-installs the extension. **No Dockerfile changes are needed** — the extension has no native dependencies beyond `git`, which every common base image already has (`mcr.microsoft.com/devcontainers/*`, `ubuntu`, `debian`, `alpine` with `apk add git`, etc.).
 
 If your base image somehow doesn't have git, add it to your Dockerfile:
 
@@ -93,20 +86,6 @@ WORKSPACE CHANGES                          ⟳  ⊞  ⊟
 - **Per-file inline buttons**: 📄 Open File (no diff), ↩ Discard Changes.
 - **Click a file row** → opens the diff editor.
 - **Status decorations** (M / U / A / D, plus colored text) come from VSCode's git extension applying its FileDecorationProvider to our `resourceUri` — no extra wiring needed.
-
-### Recommended VSCode settings (non-devcontainer)
-
-If you're not using a devcontainer, add these to your user `settings.json`:
-
-```jsonc
-{
-  // Auto-close older diff tabs as you click through files in the tree
-  // view — keeps the editor pane to one diff at a time.
-  "workbench.editor.limit.enabled": true,
-  "workbench.editor.limit.value": 1,
-  "workbench.editor.limit.perEditorGroup": false,
-}
-```
 
 ---
 
