@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# metarepo-sc — multi-repo diff viewer/editor for a workspace of side-by-side git repos.
+#
+# Walks every immediate subdirectory that contains a `.git`, lists each changed
+# file across all of them in one fzf picker, and shows a syntax-highlighted diff
+# (or file contents, for untracked files) in the preview pane.
+#
+# Bindings:
+#   (any move) automatically opens the highlighted file's diff in VSCode's
+#              diff editor — silently, without focus steal or dock bounce.
+#              Communication is via the metarepo-sc VSCode extension which
+#              watches ~/.config/metarepo-sc/cmd via fs.watch and calls
+#              vscode.diff with preserveFocus:true.
+#   enter      reload the list (use this after editing in VSCode to refresh)
+#   ctrl-e     open the file in $EDITOR inside the terminal (no diff)
+#   ctrl-r     reload the list manually
+#   esc        quit
+#
+# Required VSCode settings (recommended in user settings.json):
+#   "workbench.editor.limit.enabled": true,
+#   "workbench.editor.limit.value": 1
+# Plus VSCode must have the metarepo-sc extension installed and active.
+#
+# Run from the workspace root, or set METAREPO_SC_ROOT=/path/to/workspace.
+
+set -euo pipefail
+
+ROOT="${METAREPO_SC_ROOT:-$PWD}"
+
+# Re-entry points used by fzf's --preview and --bind reload commands.
+# These run in subprocesses spawned by fzf, so they need to do their own cd.
+case "${1:-}" in
+  --collect)
+    cd "$ROOT"
+    for d in */; do
+      repo="${d%/}"
+      [ -d "$repo/.git" ] || continue
+      git -C "$repo" status --porcelain 2>/dev/null | while IFS= read -r line; do
+        # Porcelain v1 format: "XY filename" — first 2 chars are status, then a space.
+        status="${line:0:2}"
+        file="${line:3}"
+        # Skip empty (defensive) and rename arrows (rare; would need extra parsing).
+        [ -n "$file" ] || continue
+        display=$(printf '%-22s %-3s %s' "$repo" "$status" "$file")
+        printf '%s\t%s\t%s\t%s\n' "$display" "$repo" "$file" "$status"
+      done
+    done
+    exit 0
+    ;;
+  --preview)
+    repo="$2"
+    file="$3"
+    status="$4"
+    cd "$ROOT"
+    # Untracked files have no diff base — show contents instead.
+    if [[ "$status" == "??" ]]; then
+      bat --color=always --style=numbers --paging=never \
+          --theme="Dark Modern" "$repo/$file" 2>/dev/null \
+        || cat "$repo/$file"
+    else
+      # -U99999 gives delta the entire file as context, matching how VSCode's
+      # diff editor shows unchanged lines around each change instead of only
+      # 3-line hunks.
+      git -C "$repo" diff HEAD -U99999 -- "$file" \
+        | delta \
+            --side-by-side \
+            --line-numbers \
+            --file-style=omit \
+            --hunk-header-style=omit \
+            --syntax-theme="Dark Modern" \
+            --width="${FZF_PREVIEW_COLUMNS:-80}" \
+            --paging=never
+    fi
+    exit 0
+    ;;
+  --open)
+    # Tell the metarepo-sc VSCode extension to open the selected file's
+    # working-tree-vs-HEAD diff. The extension watches ~/.config/metarepo-sc/cmd
+    # and runs `vscode.diff` directly via the API with preserveFocus: true.
+    #
+    # Why this path (instead of the `code` CLI):
+    #   The `code` CLI sends an Apple Event that activates VSCode at the OS
+    #   level — every invocation produces a focus steal and a dock bounce on
+    #   macOS, no flag suppresses either. Talking to a running extension via
+    #   a file watcher bypasses the activation entirely; commands run inside
+    #   the already-active VSCode process, silent and invisible from the
+    #   terminal's point of view.
+    #
+    # Temp HEAD blobs still live inside the repo's `.git/metarepo-sc-tmp/`:
+    #   * Filename matches the working file → diff tab title is clean.
+    #   * VSCode's default `**/.git` exclusion hides them from Explorer,
+    #     search, and the TypeScript language service.
+    repo="$2"
+    file="$3"
+    status="$4"
+    cd "$ROOT"
+    target="$(cd "$repo" && pwd)/$file"
+    cmd_file="$HOME/.config/metarepo-sc/cmd"
+    mkdir -p "$(dirname "$cmd_file")"
+
+    # `git status --porcelain` collapses untracked directories into a single
+    # entry (e.g. "?? coverage/"). Passing a directory to VSCode would add
+    # it to the workspace's folder list. Skip the open entirely; the row
+    # still shows in the list for awareness but VSCode isn't disturbed.
+    if [ -d "$target" ]; then
+      exit 0
+    fi
+
+    if [[ "$status" == "??" ]]; then
+      printf 'open\t%s\n' "$target" > "$cmd_file"
+    else
+      tmp_dir="$ROOT/$repo/.git/metarepo-sc-tmp"
+      tmp="$tmp_dir/$file"
+      mkdir -p "$(dirname "$tmp")"
+      git -C "$repo" show "HEAD:$file" > "$tmp" 2>/dev/null || : > "$tmp"
+      title="$(basename "$file") (HEAD ↔ Working)"
+      printf 'diff\t%s\t%s\t%s\n' "$tmp" "$target" "$title" > "$cmd_file"
+    fi
+    exit 0
+    ;;
+esac
+
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+
+cd "$ROOT"
+
+# Quick empty-state check so the user gets a clear message instead of a blank fzf.
+if [ -z "$("$SELF" --collect)" ]; then
+  echo "metarepo-sc: no changes in any repo under $ROOT" >&2
+  exit 0
+fi
+
+"$SELF" --collect | fzf \
+  --ansi \
+  --delimiter=$'\t' \
+  --with-nth=1 \
+  --header='arrow: live diff in VSCode  •  enter/ctrl-r: reload  •  ctrl-e: $EDITOR  •  esc: quit' \
+  --bind="focus:execute-silent($SELF --open {2} {3} {4} &)" \
+  --bind="enter:reload($SELF --collect)" \
+  --bind="ctrl-e:execute(cd {2} && \${EDITOR:-vim} {3})+reload($SELF --collect)" \
+  --bind="ctrl-r:reload($SELF --collect)"

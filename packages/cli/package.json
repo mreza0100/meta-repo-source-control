@@ -1,0 +1,38 @@
+{
+  "name": "metarepo-sc-cli",
+  "version": "0.1.0",
+  "description": "Companion CLI for the metarepo-sc VSCode extension — multi-repo diff viewer with fzf navigation and silent VSCode bridge.",
+  "license": "MIT",
+  "author": "mattgle",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mattgle/meta-repo-source-control.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/mattgle/meta-repo-source-control#readme",
+  "bugs": {
+    "url": "https://github.com/mattgle/meta-repo-source-control/issues"
+  },
+  "bin": {
+    "metarepo-sc": "bin/metarepo-sc"
+  },
+  "files": [
+    "bin/"
+  ],
+  "keywords": [
+    "meta-repo",
+    "monorepo",
+    "multi-repo",
+    "git",
+    "fzf",
+    "diff",
+    "vscode"
+  ],
+  "scripts": {
+    "lint": "if command -v shellcheck >/dev/null 2>&1; then shellcheck bin/metarepo-sc; else echo 'shellcheck not installed — skipping (install: brew install shellcheck OR apt install shellcheck)'; fi",
+    "test": "bats test/"
+  },
+  "devDependencies": {
+    "bats": "^1.13.0"
+  }
+}

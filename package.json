@@ -1,0 +1,34 @@
+{
+  "name": "metarepo-sc",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Source control UX for meta-repo workspaces — VSCode extension and companion CLI for directories of side-by-side git checkouts.",
+  "license": "MIT",
+  "author": "mattgle",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mattgle/meta-repo-source-control.git"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "lint:fix": "npm run lint:fix --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "format": "prettier --write \"**/*.{ts,js,json,md,yml}\"",
+    "format:check": "prettier --check \"**/*.{ts,js,json,md,yml}\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}

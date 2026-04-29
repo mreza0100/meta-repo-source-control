@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build extension
+        run: npm run build --workspace metarepo-sc
+
+      - name: Package VSIX
+        run: npm run package --workspace metarepo-sc
+
+      - name: Locate built VSIX
+        id: vsix
+        run: |
+          set -euo pipefail
+          path="$(ls dist/*.vsix | head -1)"
+          if [ -z "$path" ]; then
+            echo "No VSIX found in dist/" >&2
+            exit 1
+          fi
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+          echo "Found VSIX: $path"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.vsix.outputs.path }}
+          generate_release_notes: true
+
+      - name: Publish to VSCode Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "${VSCE_PAT:-}" ]; then
+            echo "VSCE_PAT not set; skipping marketplace publish."
+            echo "To enable: add a VSCE_PAT secret in Settings -> Secrets and variables -> Actions."
+            exit 0
+          fi
+          cd packages/extension
+          npx vsce publish --pat "$VSCE_PAT" --no-dependencies

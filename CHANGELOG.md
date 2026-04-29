@@ -1,0 +1,55 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.0] — 2026-04-29
+
+### Added
+
+- Initial public release as **`metarepo-sc`** (rebrand of the internal `wsdiff Bridge` extension and `wsdiff` CLI).
+- Monorepo layout with two npm workspaces:
+  - `packages/extension/` — VSCode extension, ported from JavaScript to strict TypeScript, bundled with esbuild.
+  - `packages/cli/` — bash CLI, npm-installable as `metarepo-sc-cli` (binary: `metarepo-sc`).
+- Mocha + `@vscode/test-electron` test suite for the extension (14 tests).
+- bats-core test suite for the CLI (9 tests).
+- Shared ESLint flat config + Prettier config across both packages.
+- MIT license; full OSS docs (`README.md`, `CONTRIBUTING.md`, this file).
+
+### Changed
+
+- All command IDs renamed `wsdiff.*` → `metarepoSc.*`.
+- Tree view ID renamed `wsdiff.changes` → `metarepoSc.changes`.
+- Command file path moved from `~/.config/wsdiff/cmd` → `~/.config/metarepo-sc/cmd`.
+- Temp HEAD blob directory renamed `<repo>/.git/wsdiff_tmp/` → `<repo>/.git/metarepo-sc-tmp/`.
+- CLI environment variable renamed `WSDIFF_ROOT` → `METAREPO_SC_ROOT`.
+
+### Removed
+
+- Dead `STATUS_ICON` table and unused `statusToIcon()` helper from the extension source.
+- The legacy "edit-in-place at `~/.vscode/extensions/`" development workflow — replaced with a clone-and-build flow documented in `CONTRIBUTING.md`.
+
+---
+
+## Pre-rebrand history (as `wsdiff Bridge`)
+
+These releases predate the rebrand and were never published to the VSCode marketplace.
+
+### 0.2.4 — Stable TreeItem IDs and `getParent()` so Expand All actually works; expansion state persists across refreshes.
+
+### 0.2.3 — Added Discard Changes inline action; renamed Collapse All custom command to Expand All to coexist with built-in collapse.
+
+### 0.2.2 — Switched broad file watcher to intent-aware events (`onDidSaveTextDocument`, `onDidCreateFiles`, etc.); parallelized git status calls.
+
+### 0.2.1 — File-type icons via icon theme; expanded untracked directories with `git status --untracked-files=all`.
+
+### 0.2.0 — Added Workspace Changes tree view in the SCM sidebar.
+
+### 0.1.0 — Initial CLI bridge only (silent diff-opening from terminal).
+
+[Unreleased]: https://github.com/mattgle/meta-repo-source-control/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/mattgle/meta-repo-source-control/releases/tag/v0.1.0

@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+*.tsbuildinfo
+
+# VSCode extension packaging
+*.vsix
+# LICENSE in packages/extension/ is auto-copied from root by `npm run prepackage`
+packages/extension/LICENSE
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode-test/
