@@ -87,6 +87,26 @@ WORKSPACE CHANGES                          ⟳  ⊞  ⊟
 - **Click a file row** → opens the diff editor.
 - **Status decorations** (M / U / A / D, plus colored text) come from VSCode's git extension applying its FileDecorationProvider to our `resourceUri` — no extra wiring needed.
 
+### Optional: avoid diff tab buildup
+
+By default, every file you click opens its diff in a new editor tab. After clicking through 20 files in the tree, you'll have 20 diff tabs piled up. **Most users find this fine** — you can switch between them, close ones you've reviewed, etc.
+
+If you'd rather have a "click-through" workflow where each new diff replaces the previous one (so the editor pane stays at one diff at a time), VSCode has built-in settings for that. Add to your user `settings.json` (`⌘+⇧+P` → `Preferences: Open User Settings (JSON)`):
+
+```jsonc
+{
+  // Auto-close older diff tabs as you click through files in the tree
+  // view — keeps the editor pane to one diff at a time.
+  "workbench.editor.limit.enabled": true,
+  "workbench.editor.limit.value": 1,
+  "workbench.editor.limit.perEditorGroup": false
+}
+```
+
+Or, to apply this only inside a specific devcontainer (without affecting your global VSCode), add it under `customizations.vscode.settings` in `.devcontainer/devcontainer.json`.
+
+These settings are **not part of the extension** — they're VSCode core, and the same settings affect any other tab-opening flow (clicking files in Explorer, going-to-definition, etc.). Try them and see if you like the behavior; if not, just remove them.
+
 ---
 
 ## Architecture
