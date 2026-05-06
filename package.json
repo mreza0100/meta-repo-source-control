@@ -2,7 +2,7 @@
   "name": "metarepo-sc",
   "displayName": "Meta-Repo Source Control",
   "description": "Workspace Changes tree view for meta-repo workspaces — directories of side-by-side git checkouts. Hides repos with no changes, click-to-diff per file, auto-refreshes on external edits.",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "publisher": "mattgle",
   "license": "MIT",
   "author": "mattgle",
@@ -83,6 +83,12 @@
         "title": "Discard Changes",
         "category": "Meta-Repo SC",
         "icon": "$(discard)"
+      },
+      {
+        "command": "metarepoSc.discardAllChanges",
+        "title": "Discard All Changes",
+        "category": "Meta-Repo SC",
+        "icon": "$(discard)"
       }
     ],
     "menus": {
@@ -108,6 +114,11 @@
           "command": "metarepoSc.discardChanges",
           "when": "view == metarepoSc.changes && viewItem == file",
           "group": "inline@2"
+        },
+        {
+          "command": "metarepoSc.discardAllChanges",
+          "when": "view == metarepoSc.changes && viewItem == repo",
+          "group": "inline@1"
         }
       ]
     },

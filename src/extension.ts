@@ -21,6 +21,7 @@ const CMD = {
   openFile: "metarepoSc.openFile",
   expandAll: "metarepoSc.expandAll",
   discardChanges: "metarepoSc.discardChanges",
+  discardAllChanges: "metarepoSc.discardAllChanges",
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────
@@ -76,6 +77,18 @@ async function getStatus(repoPath: string): Promise<FileStatus[]> {
 async function getBranch(repoPath: string): Promise<string> {
   const stdout = await execGit(repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]);
   return stdout.trim();
+}
+
+// Mutating git commands need their stderr surfaced — `execGit` swallows errors
+// (returns "" on failure), which is fine for read-only queries but hides real
+// problems for commands like `checkout` / `reset` / `clean`.
+function runGitOrThrow(repoPath: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    cp.execFile("git", ["-C", repoPath, ...args], { encoding: "utf8" }, (err, _stdout, stderr) => {
+      if (err) reject(new Error(stderr.trim() || err.message));
+      else resolve();
+    });
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -440,23 +453,12 @@ export function activate(context: vscode.ExtensionContext): void {
       const choice = await vscode.window.showWarningMessage(message, { modal: true }, confirmLabel);
       if (choice !== confirmLabel) return;
 
-      // Run git and surface failures explicitly. The shared `execGit` helper
-      // swallows errors (returns "" on failure) which is fine for read-only
-      // queries but hides real problems for mutating commands like discard.
-      const runGit = (args: string[]): Promise<void> =>
-        new Promise((resolve, reject) => {
-          cp.execFile("git", ["-C", item.repoPath, ...args], { encoding: "utf8" }, (err, _stdout, stderr) => {
-            if (err) reject(new Error(stderr.trim() || err.message));
-            else resolve();
-          });
-        });
-
       const fullPath = path.join(item.repoPath, item.filePath);
       try {
         if (isUntracked) {
           await fs.promises.unlink(fullPath);
         } else if (isRename && item.sourcePath) {
-          await runGit([
+          await runGitOrThrow(item.repoPath, [
             "restore",
             "--source=HEAD",
             "--staged",
@@ -466,12 +468,48 @@ export function activate(context: vscode.ExtensionContext): void {
             item.filePath,
           ]);
         } else {
-          await runGit(["checkout", "HEAD", "--", item.filePath]);
+          await runGitOrThrow(item.repoPath, ["checkout", "HEAD", "--", item.filePath]);
         }
         provider.refresh();
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         vscode.window.showErrorMessage(`${LOG_PREFIX}: discard failed for ${fileName}: ${errorMessage}`);
+      }
+    }),
+
+    // Discard ALL changes in a repo — mirrors VSCode's native SCM
+    // "Discard All Changes" on a single repo:
+    //   * `git reset --hard HEAD` → wipes index + worktree changes to tracked
+    //     files (modifications, deletions, renames, staged or unstaged).
+    //   * `git clean -fd` → removes untracked files and directories.
+    //     Crucially WITHOUT `-x`, so `.gitignore`d paths (node_modules/,
+    //     dist/, etc.) are preserved. The set removed by `clean -fd` thus
+    //     corresponds exactly to the `??` rows shown in the tree, since
+    //     `getStatus()` already uses `--untracked-files=all` (which excludes
+    //     ignored paths).
+    // A modal warning lists the repo and change count; cancelling is safe.
+    vscode.commands.registerCommand(CMD.discardAllChanges, async (item: unknown) => {
+      if (!(item instanceof RepoTreeItem)) return;
+
+      const message =
+        `Are you sure you want to DISCARD ALL CHANGES in '${item.repoName}'?\n\n` +
+        `${item.changeCount} change${item.changeCount === 1 ? "" : "s"} will be discarded ` +
+        `(modifications reset, untracked files deleted). Ignored paths are preserved.\n\n` +
+        `This is IRREVERSIBLE!`;
+
+      const confirmLabel = "Discard All Changes";
+      const choice = await vscode.window.showWarningMessage(message, { modal: true }, confirmLabel);
+      if (choice !== confirmLabel) return;
+
+      try {
+        await runGitOrThrow(item.repoPath, ["reset", "--hard", "HEAD"]);
+        await runGitOrThrow(item.repoPath, ["clean", "-fd"]);
+        provider.refresh();
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(
+          `${LOG_PREFIX}: discard all failed for ${item.repoName}: ${errorMessage}`,
+        );
       }
     }),
   );

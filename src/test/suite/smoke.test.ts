@@ -16,7 +16,7 @@ suite("Extension smoke", () => {
     assert.strictEqual(ext.isActive, true, "extension failed to activate");
   });
 
-  test("all 5 contributed commands are registered", async () => {
+  test("all 6 contributed commands are registered", async () => {
     const cmds = await vscode.commands.getCommands(true);
     const expected = [
       "metarepoSc.refresh",
@@ -24,6 +24,7 @@ suite("Extension smoke", () => {
       "metarepoSc.openFile",
       "metarepoSc.expandAll",
       "metarepoSc.discardChanges",
+      "metarepoSc.discardAllChanges",
     ];
     for (const id of expected) {
       assert.ok(cmds.includes(id), `command not registered: ${id}`);

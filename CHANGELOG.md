@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-05-06
+
+### Added
+
+- **Discard All Changes** action on each repo row in the Workspace Changes view. Hover a repo and click the discard icon to wipe every uncommitted change in that repo: tracked-file modifications/deletions/renames are reset to HEAD, and untracked files are deleted. Ignored paths (`node_modules/`, build outputs, etc.) are preserved — same behaviour as VSCode's native SCM "Discard All Changes". A modal warning shows the repo name and change count before the destructive action runs.
+
 ## [0.2.5] — 2026-04-29
 
 ### Changed

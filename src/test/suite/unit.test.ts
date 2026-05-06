@@ -34,9 +34,9 @@ suite("brand identifiers", () => {
     assert.match(VIEW_ID, /^metarepoSc\./);
   });
 
-  test("all 5 commands use metarepoSc namespace", () => {
+  test("all 6 commands use metarepoSc namespace", () => {
     const ids = Object.values(CMD);
-    assert.strictEqual(ids.length, 5);
+    assert.strictEqual(ids.length, 6);
     for (const id of ids) {
       assert.match(id, /^metarepoSc\./, `command id ${id} not under metarepoSc namespace`);
     }
