@@ -3,12 +3,12 @@ import * as vscode from "vscode";
 
 suite("Extension smoke", () => {
   test("extension is present in registry", () => {
-    const ext = vscode.extensions.getExtension("mattgle.metarepo-sc");
-    assert.ok(ext, "metarepo-sc extension not found in vscode.extensions registry");
+    const ext = vscode.extensions.getExtension("gtd-local.metarepo-sc-gtd");
+    assert.ok(ext, "metarepo-sc-gtd extension not found in vscode.extensions registry");
   });
 
   test("extension activates on startup", async () => {
-    const ext = vscode.extensions.getExtension("mattgle.metarepo-sc");
+    const ext = vscode.extensions.getExtension("gtd-local.metarepo-sc-gtd");
     assert.ok(ext, "extension not found");
     if (!ext.isActive) {
       await ext.activate();

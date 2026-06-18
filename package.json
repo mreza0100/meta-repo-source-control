@@ -2,7 +2,7 @@
   "name": "metarepo-sc-gtd",
   "displayName": "Meta-Repo SC (GTD fork)",
   "description": "Workspace Changes tree for aggregator/superproject workspaces \u2014 descends into nested submodules at any depth and hides gitlink pointer rows. GTD fork of mattgle.metarepo-sc.",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "publisher": "gtd-local",
   "license": "MIT",
   "author": "mattgle",
