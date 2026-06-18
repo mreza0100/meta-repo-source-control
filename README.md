@@ -1,8 +1,10 @@
 # Meta-Repo Source Control
 
-A VSCode extension for **multi-repo / meta-repo workspaces** — directories that contain many independent git checkouts side-by-side instead of one monorepo.
+A VSCode extension for **multi-repo workspaces** — whether a flat directory of independent git checkouts side-by-side, or an **aggregator / superproject** with git submodules nested under a parent repo (including linked worktrees).
 
-Contributes a clean **Workspace Changes** tree to the Source Control sidebar that lists _only repos with uncommitted changes_, expandable to their changed files. No per-repo commit input boxes. No empty-repo clutter. Click a file to open its diff.
+Contributes a clean **Workspace Changes** tree to the Source Control sidebar that lists _only repos with uncommitted changes_, nested under their workspace folder, expandable to their changed files. No per-repo commit input boxes. No empty-repo clutter. Click a file to open its diff.
+
+> This is the **GTD fork** (`gtd-local.metarepo-sc-gtd`) — it adds aggregator / superproject + nested-worktree support, submodule **bump** rows, and a modular codebase on top of upstream [`mattgle/meta-repo-source-control`](https://github.com/mattgle/meta-repo-source-control).
 
 ---
 
@@ -18,33 +20,41 @@ This extension's solution: contribute a **separate tree view** that does what th
 
 ## Features
 
-- **Auto-discovers git repos** as immediate subdirectories of any open workspace folder (also handles single-repo workspaces).
+- **Auto-discovers git repos** under any open workspace folder — flat siblings _and_ submodules nested several levels down. The folder root is treated as an aggregator (a superproject, or a linked worktree whose `.git` is a file): it's both shown and descended into, so the submodules inside it surface.
+- **Nested tree** — each changed submodule appears _under_ its workspace folder (worktree / superproject root), with the folder's own changed files directly beneath it. Gitlink "pointer" rows are filtered, so you see real file changes instead of opaque `M submodule/path` entries.
+- **Submodule bump rows** — when a submodule's HEAD is ahead of the gitlink the superproject records (committed work, clean worktree), it shows as a `↑ bump` node, expandable to the files changed across `recorded..HEAD`. Click a file → a diff of the two committed blobs.
 - **Hides repos with no changes** — empty repos are skipped, not just sorted to the bottom.
 - **Per-file rows** with the user's icon theme (Material Icon Theme, etc.) — same icons as Explorer.
-- **Expand/Collapse all** buttons in the view header (collapse is built-in; expand walks repos and reveals).
+- **Expand/Collapse all** buttons in the view header — folders expand to their submodules; expand-all cascades down to files (collapse is built-in).
 - **Refresh button** for manual re-scan after terminal-side git operations.
-- **Click a file → diff opens** in VSCode's diff editor (working tree vs HEAD), _focusing the diff_ so you can edit immediately.
-- **Discard Changes** inline button on each file row, with a modal confirmation. Tracked files: `git checkout HEAD -- <file>`. Untracked files: deletes from disk.
-- **Auto-refreshes on external edits** — when an external tool (terminal git, AI agents like Claude Code, other editors) modifies a file in the workspace, the view updates within ~500 ms automatically. No need to click refresh.
-- **Stable item IDs** so VSCode preserves expansion state across refreshes (collapsing one repo doesn't re-expand on save).
+- **Click a file → diff opens** in VSCode's diff editor — working tree vs HEAD for edits, recorded-gitlink vs HEAD for bumps — _focusing the diff_ so you can edit immediately.
+- **Discard Changes** inline button on working-tree file rows, with a modal confirmation. Tracked files: `git checkout HEAD -- <file>`. Untracked files: deletes from disk. (Bump rows have no inline discard — there's no working-tree change to revert.)
+- **Auto-refreshes on external edits** — when an external tool (terminal git, AI agents like Claude Code, other editors) modifies a file, the view updates within ~500 ms automatically. No need to click refresh.
+- **Stable item IDs** so VSCode preserves expansion state across refreshes (collapsing one node doesn't re-expand on save).
 
 ---
 
 ## Install
 
+This GTD fork isn't published to the marketplace — build and install it from source:
+
 ```bash
-code --install-extension mattgle.metarepo-sc
+git clone https://github.com/mreza0100/meta-repo-source-control.git
+cd meta-repo-source-control
+npm install
+npm run package
+code --install-extension dist/metarepo-sc-gtd-*.vsix
 ```
 
-Or search for **"Meta-Repo Source Control"** in the Extensions sidebar.
-
-The extension activates automatically when VSCode finishes starting. The only runtime requirement is `git` on `PATH` (which you already have, since you're using a git workspace).
+Reload VSCode afterwards (`⌘+⇧+P` → Developer: Reload Window). The only runtime requirement is `git` on `PATH`. To pull future upstream fixes: `git fetch upstream && git merge upstream/main`, then rebuild.
 
 ---
 
 ## Devcontainer setup
 
-To make the extension load automatically in a devcontainer, add it to `.devcontainer/devcontainer.json`:
+> The steps below install from the marketplace, which works for the **published upstream**. This GTD fork is unpublished — in a devcontainer, run the from-source build above in a `postCreateCommand`, or copy the built `.vsix` in and `code --install-extension` it.
+
+To make the upstream extension load automatically in a devcontainer, add it to `.devcontainer/devcontainer.json`:
 
 ```jsonc
 {
@@ -74,17 +84,22 @@ After install + reload, open the **Source Control** sidebar (`⌘+⇧+G G`). You
 
 ```
 WORKSPACE CHANGES                          ⟳  ⊞  ⊟
-─────────────────────────────────────
-▼ auth-service                                  main
-   routes.ts  src                                 M
-▼ payments-api                          feat/refunds
-   handler.ts  src                                M
-   config.json  src                               U
+───────────────────────────────────────────────────
+▼ dlb-mass-failover            worktree/dlb-mass-failover
+   settings.local.json  .claude                       M
+   ▸ gtd-dlb/balancer    ↑ bump · build/dlb-mass-failover
+   ▸ gtd-dlb/ansible     ↑ bump · master
+▼ bk-mcp                                  worktree/bk-mcp
+   ▼ gtd-others/bk      ↑ bump · build/bk-cli-mcp-plugin
+        cli.py           src                           M
+        plugin.py        src                           M
 ```
 
-- **Header buttons**: ⟳ Refresh, ⊞ Expand All, ⊟ Collapse All.
-- **Per-file inline buttons**: 📄 Open File (no diff), ↩ Discard Changes.
-- **Click a file row** → opens the diff editor.
+- **Top level = workspace folders** (a superproject root, or each linked worktree). They expand to the changed repos beneath them.
+- **Submodule nodes** sit under their folder, collapsed by default — expand to see files. A `↑ bump` badge means committed work the superproject's gitlink hasn't caught up to yet; the folder's own changed files (e.g. `settings.local.json`) sit directly under it.
+- **Header buttons**: ⟳ Refresh, ⊞ Expand All (cascades folder → submodule → files), ⊟ Collapse All.
+- **Per-file inline buttons**: 📄 Open File (no diff), ↩ Discard Changes (working-tree rows only).
+- **Click a file row** → opens the diff (working tree ↔ HEAD for edits, recorded-gitlink ↔ HEAD for bumps).
 - **Status decorations** (M / U / A / D, plus colored text) come from VSCode's git extension applying its FileDecorationProvider to our `resourceUri` — no extra wiring needed.
 
 ### Optional: avoid diff tab buildup
