@@ -79,6 +79,55 @@ async function getBranch(repoPath: string): Promise<string> {
   return stdout.trim();
 }
 
+// How deep to walk a workspace folder looking for nested git repos. Submodules
+// under an aggregator live a few levels down (e.g. `gtd-dns/<repo>` is depth 2);
+// 3 covers grouped layouts without an unbounded crawl.
+const MAX_SCAN_DEPTH = 3;
+
+// Discover git repos under a workspace folder.
+//
+// The folder root is the *aggregator*: if it is itself a git repo (an
+// aggregator/superproject, or a linked worktree whose `.git` is a FILE), it is
+// recorded AND descended into — so its nested submodules are still found. This
+// is the critical difference from a naive "found .git, stop" scan, which would
+// short-circuit on the root and never see the submodules inside it.
+//
+// Any NESTED dir containing `.git` (file or dir) is a leaf repo — recorded, not
+// descended into. Dot-dirs (`.git`, `.worktrees`, `.claude`), `node_modules`,
+// and common build outputs are skipped so the walk stays cheap (it stops at
+// each repo and never enters one).
+async function discoverRepos(
+  root: string,
+): Promise<{ aggregator: string | null; subRepos: string[] }> {
+  const skip = new Set(["node_modules", "dist", "out", "build", "coverage", "target", "vendor"]);
+  const subRepos: string[] = [];
+  const aggregator = fs.existsSync(path.join(root, ".git")) ? root : null;
+
+  async function walk(dir: string, depth: number): Promise<void> {
+    if (depth > MAX_SCAN_DEPTH) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (e.name.startsWith(".")) continue; // .git, .worktrees, .claude, …
+      if (skip.has(e.name)) continue;
+      const child = path.join(dir, e.name);
+      if (fs.existsSync(path.join(child, ".git"))) {
+        subRepos.push(child); // leaf repo — record, don't descend into it
+      } else {
+        await walk(child, depth + 1); // keep looking deeper
+      }
+    }
+  }
+
+  await walk(root, 1);
+  return { aggregator, subRepos };
+}
+
 // Mutating git commands need their stderr surfaced — `execGit` swallows errors
 // (returns "" on failure), which is fine for read-only queries but hides real
 // problems for commands like `checkout` / `reset` / `clean`.
@@ -91,6 +140,60 @@ function runGitOrThrow(repoPath: string, args: string[]): Promise<void> {
   });
 }
 
+// `git show <ref>:<path>` → file contents, or "" if the path doesn't exist at
+// that ref (one side of an add/delete). Errors are swallowed: a missing blob is
+// a legitimate empty side of a diff, not a failure.
+function gitShowBlob(repoPath: string, ref: string, blobPath: string): Promise<string> {
+  return new Promise((resolve) => {
+    cp.execFile(
+      "git",
+      ["-C", repoPath, "show", `${ref}:${blobPath}`],
+      { encoding: "utf8", maxBuffer: 50 * 1024 * 1024 },
+      (err, stdout) => resolve(err ? "" : stdout),
+    );
+  });
+}
+
+// A submodule "bump": its checked-out HEAD has advanced past the commit the
+// superproject records for it (the gitlink), with no uncommitted files. The
+// change to review is the commit range recorded..HEAD.
+interface BumpRef {
+  baseRef: string; // gitlink the superproject records (range start)
+  headRef: string; // submodule's current HEAD (range end)
+  basePath: string; // path at baseRef (== file unless renamed in range)
+}
+
+// SHA the superproject records for a submodule, read from its HEAD tree.
+// Empty if relPath isn't a gitlink (type "commit") there.
+async function getRecordedGitlink(aggregatorPath: string, relPath: string): Promise<string> {
+  const out = await execGit(aggregatorPath, ["ls-tree", "HEAD", "--", relPath]);
+  const m = out.match(/^\S+ commit (\S+)\t/);
+  return m?.[1] ?? "";
+}
+
+// Parse one `git diff --name-status -M` line: "M\tfile", "A\tfile", "D\tfile",
+// "R100\told\tnew". Tab-separated, no leading space (unlike porcelain). The
+// status is normalised to a 2-char code so statusBadge() renders it like a
+// working-tree row.
+function parseNameStatusLine(line: string): FileStatus {
+  const parts = line.split("\t");
+  const letter = (parts[0] ?? "").charAt(0);
+  if ((letter === "R" || letter === "C") && parts.length >= 3) {
+    return { status: ` ${letter}`, sourcePath: parts[1] ?? "", file: parts[2] ?? "" };
+  }
+  return { status: ` ${letter}`, file: parts[1] ?? "" };
+}
+
+// Files changed across a bump range — the contents of the bump.
+async function getBumpFiles(repoPath: string, base: string, head: string): Promise<FileStatus[]> {
+  const out = await execGit(repoPath, ["diff", "--name-status", "-M", base, head]);
+  if (!out) return [];
+  return out
+    .split("\n")
+    .filter((l) => l.trim().length > 0)
+    .map(parseNameStatusLine);
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Diff opening — invoked when the user clicks a file row in the tree.
 // ─────────────────────────────────────────────────────────────────────
@@ -100,8 +203,32 @@ async function openDiffForFile(
   file: string,
   status: string,
   sourcePath?: string,
+  bump?: BumpRef,
 ): Promise<void> {
   const showOptions = { preserveFocus: false, preview: true };
+
+  // Bump row: diff the two COMMITTED blobs (recorded gitlink ↔ current HEAD).
+  // Both sides are materialised; an add/delete in the range yields an empty
+  // side. No working-tree file is involved — a clean bump has none.
+  if (bump) {
+    const basePath = bump.basePath || file;
+    const baseTmp = path.join(repoPath, ".git", TMP_DIR_NAME, "bump-base", file);
+    const headTmp = path.join(repoPath, ".git", TMP_DIR_NAME, "bump-head", file);
+    fs.mkdirSync(path.dirname(baseTmp), { recursive: true });
+    fs.mkdirSync(path.dirname(headTmp), { recursive: true });
+    fs.writeFileSync(baseTmp, await gitShowBlob(repoPath, bump.baseRef, basePath));
+    fs.writeFileSync(headTmp, await gitShowBlob(repoPath, bump.headRef, file));
+    const title = `${path.basename(file)} (bump ${bump.baseRef.slice(0, 8)} ↔ ${bump.headRef.slice(0, 8)})`;
+    await vscode.commands.executeCommand(
+      "vscode.diff",
+      vscode.Uri.file(baseTmp),
+      vscode.Uri.file(headTmp),
+      title,
+      showOptions,
+    );
+    return;
+  }
+
   const target = path.join(repoPath, file);
 
   // Untracked file or directory: just open it (no HEAD to diff against).
@@ -124,16 +251,7 @@ async function openDiffForFile(
   // default `**/.git` exclusion keeps it out of Explorer/search/TS service.
   const tmpPath = path.join(repoPath, ".git", TMP_DIR_NAME, file);
   fs.mkdirSync(path.dirname(tmpPath), { recursive: true });
-
-  const head = await new Promise<string>((resolve) => {
-    cp.execFile(
-      "git",
-      ["-C", repoPath, "show", `HEAD:${headPath}`],
-      { encoding: "utf8", maxBuffer: 50 * 1024 * 1024 },
-      (err, stdout) => resolve(err ? "" : stdout),
-    );
-  });
-  fs.writeFileSync(tmpPath, head);
+  fs.writeFileSync(tmpPath, await gitShowBlob(repoPath, "HEAD", headPath));
 
   const fileName = path.basename(file);
   const sourceName = sourcePath ? path.basename(sourcePath) : null;
@@ -172,14 +290,22 @@ class RepoTreeItem extends vscode.TreeItem {
     public readonly repoPath: string,
     public readonly changeCount: number,
     branch: string,
+    // Aggregator nodes filter their gitlink rows when expanded; submodule
+    // nodes with a bump range carry its endpoints so file children rebuild.
+    public readonly isAggregator: boolean = false,
+    public readonly bumpBase?: string,
+    public readonly bumpHead?: string,
   ) {
     super(repoName, vscode.TreeItemCollapsibleState.Expanded);
     // Stable id so VSCode preserves expansion state across refreshes AND
     // matches the item in tree.reveal() calls.
     this.id = `repo:${repoPath}`;
-    this.description = branch;
-    this.tooltip = `${repoPath}\n${branch || "(detached)"} · ${changeCount} change${changeCount === 1 ? "" : "s"}`;
-    this.iconPath = new vscode.ThemeIcon("repo");
+    const isBump = !!(bumpBase && bumpHead);
+    this.description = isBump ? `↑ bump${branch ? ` · ${branch}` : ""}` : branch;
+    this.tooltip =
+      `${repoPath}\n${branch || "(detached)"} · ${changeCount} change${changeCount === 1 ? "" : "s"}` +
+      (isBump ? `\nbump ${bumpBase.slice(0, 8)} → ${bumpHead.slice(0, 8)}` : "");
+    this.iconPath = new vscode.ThemeIcon(isBump ? "arrow-up" : "repo");
     this.contextValue = "repo";
   }
 }
@@ -193,19 +319,27 @@ class FileTreeItem extends vscode.TreeItem {
     // the HEAD blob for diffing — without it the lookup fails because
     // HEAD doesn't have the new path.
     public readonly sourcePath?: string,
+    // Set for bump rows (a committed-range change). Undefined for working-tree
+    // rows. Drives the diff (committed blobs) and a distinct id/contextValue.
+    public readonly bump?: BumpRef,
   ) {
     super(path.basename(filePath), vscode.TreeItemCollapsibleState.None);
     const dir = path.dirname(filePath);
-    this.id = `file:${repoPath}:${filePath}`;
+    // Distinct id prefix so a file that is BOTH a working change and in the
+    // bump range yields two non-colliding rows.
+    this.id = `${bump ? "bumpfile" : "file"}:${repoPath}:${filePath}`;
     this.description = dir === "." ? "" : dir;
     const renameNote = sourcePath ? `\nrenamed from ${sourcePath}` : "";
-    this.tooltip = `${filePath}\n${gitStatus.trim()} (${statusBadge(gitStatus)})${renameNote}`;
+    const bumpNote = bump ? `\nbump ${bump.baseRef.slice(0, 8)} ↔ ${bump.headRef.slice(0, 8)}` : "";
+    this.tooltip = `${filePath}\n${gitStatus.trim()} (${statusBadge(gitStatus)})${renameNote}${bumpNote}`;
     // Intentionally NOT setting iconPath: when only resourceUri is set,
     // VSCode hands the file URI to the active icon theme (Material Icon
     // Theme, etc.) and renders the matching file-type icon. Setting
     // iconPath would override and force a generic codicon.
     this.resourceUri = vscode.Uri.file(path.join(repoPath, filePath));
-    this.contextValue = "file";
+    // "bumpfile" (vs "file") suppresses the discard/open-file inline buttons —
+    // a committed-range row has no working-tree change to discard.
+    this.contextValue = bump ? "bumpfile" : "file";
     this.command = {
       command: CMD.openDiff,
       title: "Open Diff",
@@ -266,35 +400,60 @@ class WorkspaceChangesProvider implements vscode.TreeDataProvider<WorkspaceTreeI
 
     for (const folder of folders) {
       const root = folder.uri.fsPath;
+      const { aggregator, subRepos } = await discoverRepos(root);
 
-      // Case 1: workspace folder is itself a single git repo.
-      if (fs.existsSync(path.join(root, ".git"))) {
-        const status = await getStatus(root);
-        if (status.length > 0) {
-          allRepos.push(await this._makeRepoItem(folder.name, root, status));
-        }
-        continue;
+      // Submodule paths relative to the aggregator root — used to drop the
+      // aggregator's gitlink "pointer" rows. A changed submodule surfaces in
+      // the aggregator's `git status` as an opaque ` M <path>` line; we hide
+      // that and show the submodule as its own node (working files and/or bump).
+      const subRel = new Set(subRepos.map((p) => path.relative(root, p)));
+
+      type Cand = { name: string; path: string; isAggregator: boolean };
+      const candidates: Cand[] = [];
+      if (aggregator) candidates.push({ name: folder.name, path: aggregator, isAggregator: true });
+      for (const sub of subRepos) {
+        candidates.push({ name: path.relative(root, sub), path: sub, isAggregator: false });
       }
 
-      // Case 2: meta-repo — workspace folder's children are git repos.
-      // Run git status across all candidate repos in parallel: 19 repos at
-      // ~10 ms sequential = ~190 ms; parallel ~= max single repo, ~10 ms.
-      let entries: fs.Dirent[];
-      try {
-        entries = await fs.promises.readdir(root, { withFileTypes: true });
-      } catch {
-        continue;
-      }
+      // Parallel scan. Each repo: working-tree status, plus (for a submodule)
+      // its bump range — committed work the superproject's gitlink hasn't
+      // caught up to. A repo is shown if it has working changes OR a bump.
+      const built = await Promise.all(
+        candidates.map(async (c) => {
+          let working = await getStatus(c.path);
+          if (c.isAggregator) {
+            working = working.filter((s) => !subRel.has(s.file));
+            return { ...c, working, bumpBase: "", bumpHead: "", bumpCount: 0 };
+          }
+          const recorded = aggregator ? await getRecordedGitlink(aggregator, c.name) : "";
+          const head = (await execGit(c.path, ["rev-parse", "HEAD"])).trim();
+          const isBump = !!recorded && !!head && recorded !== head;
+          const bumpCount = isBump ? (await getBumpFiles(c.path, recorded, head)).length : 0;
+          return {
+            ...c,
+            working,
+            bumpBase: isBump ? recorded : "",
+            bumpHead: isBump ? head : "",
+            bumpCount,
+          };
+        }),
+      );
 
-      const candidates = entries
-        .filter((e) => e.isDirectory() && fs.existsSync(path.join(root, e.name, ".git")))
-        .map((e) => ({ name: e.name, path: path.join(root, e.name) }));
-
-      const dirty = (
-        await Promise.all(candidates.map(async (c) => ({ ...c, status: await getStatus(c.path) })))
-      ).filter((c) => c.status.length > 0);
-
-      const items = await Promise.all(dirty.map((c) => this._makeRepoItem(c.name, c.path, c.status)));
+      const dirty = built.filter((c) => c.working.length + c.bumpCount > 0);
+      const items = await Promise.all(
+        dirty.map(async (c) => {
+          const branch = await getBranch(c.path);
+          return new RepoTreeItem(
+            c.name,
+            c.path,
+            c.working.length + c.bumpCount,
+            branch,
+            c.isAggregator,
+            c.bumpBase || undefined,
+            c.bumpHead || undefined,
+          );
+        }),
+      );
       items.sort((a, b) => a.repoName.localeCompare(b.repoName));
       allRepos.push(...items);
     }
@@ -302,16 +461,33 @@ class WorkspaceChangesProvider implements vscode.TreeDataProvider<WorkspaceTreeI
     return allRepos;
   }
 
-  private async _makeRepoItem(name: string, repoPath: string, status: FileStatus[]): Promise<RepoTreeItem> {
-    const branch = await getBranch(repoPath);
-    return new RepoTreeItem(name, repoPath, status.length, branch);
-  }
-
   private async _buildFileNodes(repoNode: RepoTreeItem): Promise<FileTreeItem[]> {
-    const status = await getStatus(repoNode.repoPath);
-    return status.map(
-      ({ status: s, file, sourcePath }) => new FileTreeItem(repoNode.repoPath, file, s, sourcePath),
+    let working = await getStatus(repoNode.repoPath);
+    if (repoNode.isAggregator) {
+      // Re-derive the gitlink paths to filter (cheap: stops at each repo).
+      const { subRepos } = await discoverRepos(repoNode.repoPath);
+      const subRel = new Set(subRepos.map((p) => path.relative(repoNode.repoPath, p)));
+      working = working.filter((s) => !subRel.has(s.file));
+    }
+    const workingItems = working.map(
+      ({ status, file, sourcePath }) => new FileTreeItem(repoNode.repoPath, file, status, sourcePath),
     );
+
+    let bumpItems: FileTreeItem[] = [];
+    if (repoNode.bumpBase && repoNode.bumpHead) {
+      const base = repoNode.bumpBase;
+      const head = repoNode.bumpHead;
+      const files = await getBumpFiles(repoNode.repoPath, base, head);
+      bumpItems = files.map(
+        ({ status, file, sourcePath }) =>
+          new FileTreeItem(repoNode.repoPath, file, status, sourcePath, {
+            baseRef: base,
+            headRef: head,
+            basePath: sourcePath ?? file,
+          }),
+      );
+    }
+    return [...workingItems, ...bumpItems];
   }
 }
 
@@ -391,7 +567,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand(CMD.openDiff, async (item: unknown) => {
       if (!(item instanceof FileTreeItem)) return;
-      await openDiffForFile(item.repoPath, item.filePath, item.gitStatus, item.sourcePath);
+      await openDiffForFile(item.repoPath, item.filePath, item.gitStatus, item.sourcePath, item.bump);
     }),
 
     vscode.commands.registerCommand(CMD.openFile, async (item: unknown) => {
